@@ -1,0 +1,10 @@
+services:
+  dev:
+    build: .
+    init: true
+    working_dir: /workspace
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      - .:/workspace
+    # Capacidad del tmpfs, no del buffer. Revisar con el layout de P2-01.
+    shm_size: "64m"
