@@ -1,0 +1,11 @@
+.git
+.gitignore
+results/
+*.o
+*.out
+creator
+producer
+consumer
+finisher
+*.csv
+*.log

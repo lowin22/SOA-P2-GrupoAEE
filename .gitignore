@@ -53,3 +53,21 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Ejecutables del Proyecto 2.
+creator
+producer
+consumer
+finisher
+
+# Resultados generados durante las pruebas.
+results/*
+!results/.gitkeep
+
+# Archivos temporales de pruebas y mediciones.
+*.log
+*.tmp
+
+# Archivos auxiliares de Python.
+__pycache__/
+*.pyc
