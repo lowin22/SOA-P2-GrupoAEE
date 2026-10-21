@@ -1,0 +1,9 @@
+.git
+build
+creator
+producer
+consumer
+finisher
+results/runs
+.env
+__pycache__

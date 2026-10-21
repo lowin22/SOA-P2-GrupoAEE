@@ -53,3 +53,18 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Proyecto SOA P2
+/build/
+/creator
+/producer
+/consumer
+/finisher
+/results/runs/
+__pycache__/
+*.pyc
+.env
+
+# Documentación local y configuración del editor
+/docs/
+/.vscode/
