@@ -61,6 +61,8 @@ dkms.conf
 /consumer
 /finisher
 /results/runs/
+*.log
+*.tmp
 __pycache__/
 *.pyc
 .env
