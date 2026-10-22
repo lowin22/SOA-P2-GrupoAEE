@@ -54,20 +54,21 @@ dkms.conf
 # debug information files
 *.dwo
 
-# Ejecutables del Proyecto 2.
-creator
-producer
-consumer
-finisher
-
-# Resultados generados durante las pruebas.
-results/*
-!results/.gitkeep
-
-# Archivos temporales de pruebas y mediciones.
+# Proyecto SOA P2
+/build/
+/creator
+/producer
+/consumer
+/finisher
+/results/runs/
 *.log
 *.tmp
-
-# Archivos auxiliares de Python.
 __pycache__/
 *.pyc
+.env
+
+# Mantener fuera los planes locales, pero versionar los entregables de P2-01.
+/docs/*
+!/docs/ARQUITECTURA.md
+!/docs/PROTOCOLO.md
+/.vscode/

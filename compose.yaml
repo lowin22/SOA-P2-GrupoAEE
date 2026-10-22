@@ -1,30 +1,10 @@
-# Definir los servicios del entorno de desarrollo.
 services:
-
-  # Contenedor compartido para ejecutar el proyecto.
-  soa-p2:
-
-    # Construir la imagen utilizando nuestro Dockerfile.
-    build:
-      context: .
-      dockerfile: Dockerfile
-
-    # Mantener un nombre identificable para el contenedor.
-    container_name: soa-p2-grupoaee
-
-    # Mantener activa una terminal interactiva.
-    stdin_open: true
-    tty: true
-
-    # Mantener vivo el contenedor para ejecutar procesos con exec.
-    command: ["sleep", "infinity"]
-
-    # Montar el código del proyecto dentro del contenedor.
+  dev:
+    build: .
+    init: true
+    working_dir: /workspace
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     volumes:
       - .:/workspace
-
-    # Configurar espacio para memoria compartida.
-    shm_size: "64mb"
-
-    # Ubicar los procesos en el directorio del proyecto.
-    working_dir: /workspace
+    # Capacidad del tmpfs, no del buffer. Revisar con el layout de P2-01.
+    shm_size: "64m"
