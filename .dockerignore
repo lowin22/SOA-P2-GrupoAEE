@@ -1,9 +1,15 @@
 .git
+.gitignore
 build
 creator
 producer
 consumer
 finisher
 results/runs
+*.o
+*.out
+*.csv
+*.log
+*.tmp
 .env
 __pycache__
