@@ -1,0 +1,47 @@
+#ifndef SOA_TYPES_H
+#define SOA_TYPES_H
+
+#include <stdint.h>
+
+#define SOA_MIN_CAPACITY UINT32_C(1)
+#define SOA_MAX_CAPACITY UINT32_C(1024)
+#define SOA_MIN_PARTICIPANT_ID UINT32_C(1)
+#define SOA_MAX_PARTICIPANT_ID UINT32_C(1024)
+
+typedef enum {
+    SOA_OK = 0,
+    SOA_INVALID_ARGUMENT,
+    SOA_EXISTS,
+    SOA_NOT_FOUND,
+    SOA_NOT_READY,
+    SOA_INCOMPATIBLE_INSTANCE,
+    SOA_CLOSED,
+    SOA_INVALID_ID,
+    SOA_DUPLICATE_ID,
+    SOA_LIMIT_REACHED,
+    SOA_OVERFLOW,
+    SOA_FINISHER_EXISTS,
+    SOA_NO_CONSUMER,
+    SOA_SYSTEM_ERROR
+} soa_status_t;
+
+typedef enum {
+    SOA_ROLE_PRODUCER = 1,
+    SOA_ROLE_CONSUMER = 2
+} soa_role_t;
+
+typedef enum {
+    SOA_STATE_OPEN = 1,
+    SOA_STATE_CLOSING = 2,
+    SOA_STATE_CLOSED = 3
+} soa_state_t;
+
+typedef enum {
+    SOA_EVENT_JOIN = 1,
+    SOA_EVENT_ENQUEUE,
+    SOA_EVENT_DEQUEUE,
+    SOA_EVENT_LEAVE,
+    SOA_EVENT_STATE_CHANGE
+} soa_event_kind_t;
+
+#endif

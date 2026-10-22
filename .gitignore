@@ -65,6 +65,8 @@ __pycache__/
 *.pyc
 .env
 
-# Documentación local y configuración del editor
-/docs/
+# Mantener fuera los planes locales, pero versionar los entregables de P2-01.
+/docs/*
+!/docs/ARQUITECTURA.md
+!/docs/PROTOCOLO.md
 /.vscode/
