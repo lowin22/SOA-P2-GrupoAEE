@@ -52,6 +52,107 @@ def generar_payload(producer_id, sequence):
     return resultado.hex()
 
 
+def validar_entero(valor, campo, ruta, linea, minimo=0, maximo=None):
+    """Comprueba que un campo sea un entero decimal dentro del rango."""
+    if not valor or not valor.isascii() or not valor.isdecimal():
+        raise ValueError(
+            f"{ruta}:{linea}: {campo} debe ser un entero decimal"
+        )
+
+    numero = int(valor)
+
+    if numero < minimo or (maximo is not None and numero > maximo):
+        raise ValueError(
+            f"{ruta}:{linea}: {campo} fuera del rango permitido"
+        )
+
+    return numero
+
+
+def validar_fila(fila, ruta, linea):
+    """Valida tipos, rangos y campos obligatorios del CSV."""
+    validar_entero(
+        fila["participant_id"], "participant_id",
+        ruta, linea, minimo=1, maximo=1024
+    )
+
+    tiempo = validar_entero(
+        fila["timestamp_ns"], "timestamp_ns",
+        ruta, linea, maximo=(1 << 64) - 1
+    )
+
+    validar_entero(
+        fila["occupancy"], "occupancy",
+        ruta, linea, maximo=1024
+    )
+
+    if fila["event"] in {"ENQUEUE", "DEQUEUE"}:
+        productor = validar_entero(
+            fila["producer_id"], "producer_id",
+            ruta, linea, minimo=1, maximo=1024
+        )
+        secuencia = validar_entero(
+            fila["sequence"], "sequence",
+            ruta, linea, minimo=1, maximo=(1 << 64) - 1
+        )
+        validar_entero(
+            fila["enqueue_seq"], "enqueue_seq",
+            ruta, linea, minimo=1, maximo=(1 << 64) - 1
+        )
+
+        insercion = validar_entero(
+            fila["enqueue_time_ns"], "enqueue_time_ns",
+            ruta, linea, maximo=(1 << 64) - 1
+        )
+
+        if insercion > tiempo:
+            raise ValueError(
+                f"{ruta}:{linea}: inserción posterior al evento"
+            )
+
+        if fila["event"] == "DEQUEUE":
+            validar_entero(
+                fila["dequeue_seq"], "dequeue_seq",
+                ruta, linea, minimo=1, maximo=(1 << 64) - 1
+            )
+        elif fila["dequeue_seq"] != "":
+            raise ValueError(
+                f"{ruta}:{linea}: dequeue_seq no aplica a ENQUEUE"
+            )
+
+        payload = fila["payload_hex"]
+
+        if len(payload) != 64 or any(
+            caracter not in "0123456789abcdef"
+            for caracter in payload
+        ):
+            raise ValueError(
+                f"{ruta}:{linea}: payload_hex inválido"
+            )
+
+        if fila["event"] == "ENQUEUE" and fila["role"] != "producer":
+            raise ValueError(
+                f"{ruta}:{linea}: ENQUEUE requiere role=producer"
+            )
+
+        if fila["event"] == "DEQUEUE" and fila["role"] != "consumer":
+            raise ValueError(
+                f"{ruta}:{linea}: DEQUEUE requiere role=consumer"
+            )
+
+    else:
+        for campo in (
+            "producer_id", "sequence", "enqueue_seq",
+            "dequeue_seq", "enqueue_time_ns", "payload_hex"
+        ):
+            if fila[campo] != "":
+                raise ValueError(
+                    f"{ruta}:{linea}: {campo} debe estar vacío"
+                )
+
+    return tiempo
+
+
 
 def leer_csv(ruta):
     """Lee un archivo CSV y valida su estructura básica."""
@@ -81,7 +182,14 @@ def leer_csv(ruta):
             if fila["state"] not in ESTADOS:
                 raise ValueError(f"{ruta}:{numero_linea}: estado inválido")
 
+            validar_fila(fila, ruta, numero_linea)
+
             registros.append(fila)
+
+    if not registros:
+        raise ValueError(
+            f"{ruta}: CSV sin registros; evidencia insuficiente"
+        )
 
     return registros
 

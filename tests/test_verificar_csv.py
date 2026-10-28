@@ -45,6 +45,15 @@ def evento(rol, identificador, tipo, tiempo, productor,
 
 class TestVerificadorCSV(unittest.TestCase):
 
+
+    def test_csv_sin_registros(self):
+        """Un archivo con encabezado, pero sin eventos, debe rechazarse."""
+        resultado = self.ejecutar([])
+
+        self.assertNotEqual(resultado.returncode, 0)
+        self.assertIn("CSV sin registros", resultado.stderr)
+
+
     def ejecutar(self, filas):
         """Crea un CSV temporal y ejecuta el verificador."""
         with tempfile.TemporaryDirectory() as directorio:
@@ -201,6 +210,52 @@ class TestVerificadorCSV(unittest.TestCase):
 
         self.assertNotEqual(resultado.returncode, 0)
         self.assertIn("Payload inválido", resultado.stderr)
+
+
+    def test_identificador_fuera_de_rango(self):
+        """Rechaza productores con ID superior a 1024."""
+        fila = evento(
+            "producer", 1, "ENQUEUE", 100,
+            1025, 1, 1, "", 1
+        )
+
+        resultado = self.ejecutar([fila])
+        self.assertNotEqual(resultado.returncode, 0)
+        self.assertIn("producer_id fuera del rango", resultado.stderr)
+
+    def test_payload_incompleto(self):
+        """Rechaza payloads que no contienen exactamente 32 bytes."""
+        fila = evento(
+            "producer", 1, "ENQUEUE", 100,
+            1, 1, 1, "", 1
+        )
+
+        columnas = fila.split(",")
+        columnas[-1] = "abcd"
+        fila = ",".join(columnas)
+
+        resultado = self.ejecutar([fila])
+        self.assertNotEqual(resultado.returncode, 0)
+        self.assertIn("payload_hex inválido", resultado.stderr)
+
+    def test_tiempo_de_insercion_posterior(self):
+        """Rechaza extracciones anteriores a la inserción registrada."""
+        entrada = evento(
+            "producer", 1, "ENQUEUE", 100,
+            1, 1, 1, "", 1
+        )
+        salida = evento(
+            "consumer", 1, "DEQUEUE", 200,
+            1, 1, 1, 1, 0
+        )
+
+        columnas = salida.split(",")
+        columnas[10] = "300"
+        salida = ",".join(columnas)
+
+        resultado = self.ejecutar([entrada, salida])
+        self.assertNotEqual(resultado.returncode, 0)
+        self.assertIn("inserción posterior al evento", resultado.stderr)
 
 
 
