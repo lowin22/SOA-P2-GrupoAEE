@@ -42,8 +42,87 @@ def evento(rol, identificador, tipo, tiempo, productor,
     )
 
 
+def evento_ciclo(rol, identificador, tipo, tiempo):
+    """Genera un registro JOIN o LEAVE válido según el contrato CSV."""
+    return {
+        "schema_version": "1",
+        "role": rol,
+        "participant_id": str(identificador),
+        "event": tipo,
+        "timestamp_ns": str(tiempo),
+        "state": "OPEN",
+        "producer_id": "",
+        "sequence": "",
+        "enqueue_seq": "",
+        "dequeue_seq": "",
+        "enqueue_time_ns": "",
+        "occupancy": "0",
+        "payload_hex": "",
+    }
+
+
+def evento_operacion(rol, identificador, tipo, tiempo):
+    """Crea un evento mínimo para probar exclusivamente el ciclo de vida."""
+    fila = evento_ciclo(rol, identificador, tipo, tiempo)
+    return fila
+
+
 
 class TestVerificadorCSV(unittest.TestCase):
+
+
+    def test_ciclo_vida_correcto(self):
+        """Un participante puede registrarse, operar y retirarse."""
+        registros = [
+            evento_ciclo("producer", 1, "JOIN", 100),
+            evento_operacion("producer", 1, "ENQUEUE", 200),
+            evento_ciclo("producer", 1, "LEAVE", 300),
+        ]
+
+        errores = modulo.verificar_ciclo_vida(registros)
+        self.assertEqual(errores, [])
+
+    def test_join_duplicado(self):
+        """No se permite registrar dos veces el mismo ID."""
+        registros = [
+            evento_ciclo("producer", 1, "JOIN", 100),
+            evento_ciclo("producer", 1, "JOIN", 200),
+            evento_ciclo("producer", 1, "LEAVE", 300),
+        ]
+
+        errores = modulo.verificar_ciclo_vida(registros)
+        self.assertTrue(any("JOIN duplicado" in e for e in errores))
+
+    def test_leave_sin_join(self):
+        """No se puede retirar un participante no registrado."""
+        registros = [
+            evento_ciclo("consumer", 2, "LEAVE", 100),
+        ]
+
+        errores = modulo.verificar_ciclo_vida(registros)
+        self.assertTrue(any("LEAVE sin JOIN" in e for e in errores))
+
+    def test_operacion_sin_join(self):
+        """No se puede insertar antes del registro."""
+        registros = [
+            evento_operacion("producer", 3, "ENQUEUE", 100),
+        ]
+
+        errores = modulo.verificar_ciclo_vida(registros)
+        self.assertTrue(any("Operación sin JOIN" in e for e in errores))
+
+    def test_operacion_despues_leave(self):
+        """No se permiten operaciones después de la retirada."""
+        registros = [
+            evento_ciclo("consumer", 1, "JOIN", 100),
+            evento_ciclo("consumer", 1, "LEAVE", 200),
+            evento_operacion("consumer", 1, "DEQUEUE", 300),
+        ]
+
+        errores = modulo.verificar_ciclo_vida(registros)
+        self.assertTrue(
+            any("Operación después de LEAVE" in e for e in errores)
+        )
 
 
     def test_csv_sin_registros(self):

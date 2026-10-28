@@ -194,6 +194,69 @@ def leer_csv(ruta):
     return registros
 
 
+def verificar_ciclo_vida(registros):
+    """Comprueba JOIN, LEAVE y operaciones de cada participante.
+
+    La entrada debe conservar el orden original de los eventos dentro
+    de cada archivo de trabajador. No se presupone un orden global
+    de escritura entre procesos.
+    """
+    errores = []
+
+    # Cada participante se identifica por rol e ID.
+    participantes = {}
+
+    for fila in registros:
+        rol = fila["role"]
+        identificador = int(fila["participant_id"])
+        evento = fila["event"]
+        clave = (rol, identificador)
+
+        estado = participantes.setdefault(
+            clave,
+            {"registrado": False, "retirado": False}
+        )
+
+        if evento == "JOIN":
+            if estado["registrado"] or estado["retirado"]:
+                errores.append(
+                    f"JOIN duplicado o ID reutilizado: {clave}"
+                )
+            else:
+                estado["registrado"] = True
+
+        elif evento == "LEAVE":
+            if not estado["registrado"]:
+                errores.append(
+                    f"LEAVE sin JOIN: {clave}"
+                )
+            elif estado["retirado"]:
+                errores.append(
+                    f"LEAVE duplicado: {clave}"
+                )
+            else:
+                estado["retirado"] = True
+
+        elif evento in {"ENQUEUE", "DEQUEUE"}:
+            if not estado["registrado"]:
+                errores.append(
+                    f"Operación sin JOIN: {clave}"
+                )
+            elif estado["retirado"]:
+                errores.append(
+                    f"Operación después de LEAVE: {clave}"
+                )
+
+    # Comprobar que todos los participantes se retiraron.
+    for clave, estado in participantes.items():
+        if estado["registrado"] and not estado["retirado"]:
+            errores.append(
+                f"Participante sin LEAVE: {clave}"
+            )
+
+    return errores
+
+
 
 def verificar_mensajes(registros):
     """Comprueba identidad, conservación, secuencias globales y FIFO."""
@@ -344,6 +407,7 @@ def verificar_mensajes(registros):
 
 
 def main():
+    """Ejecuta las verificaciones seleccionadas desde la terminal."""
     parser = argparse.ArgumentParser(
         description="Verifica los registros CSV de productores y consumidores."
     )
@@ -353,15 +417,25 @@ def main():
         type=Path,
         help="Archivos CSV de una misma instancia",
     )
+    parser.add_argument(
+        "--validar-ciclo",
+        action="store_true",
+        help="Comprueba JOIN, LEAVE y operaciones de participantes",
+    )
     args = parser.parse_args()
 
     try:
         registros = []
 
+        # Leer todos los CSV para verificar los mensajes conjuntamente.
         for ruta in args.archivos:
             registros.extend(leer_csv(ruta))
 
         errores, aceptados, extraidos = verificar_mensajes(registros)
+
+        # Modo provisional: no es una auditoría integral del cierre.
+        if args.validar_ciclo:
+            errores.extend(verificar_ciclo_vida(registros))
 
         print(f"Mensajes aceptados: {aceptados}")
         print(f"Mensajes extraídos: {extraidos}")
