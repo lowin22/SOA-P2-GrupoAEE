@@ -8,6 +8,7 @@ Comprueba estructura, correspondencia de mensajes y orden FIFO.
 
 import argparse
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -418,6 +419,44 @@ def verificar_mensajes(registros):
 
 
 
+def cargar_manifiesto(ruta):
+    """Obtiene rutas relativas declaradas en un manifiesto auxiliar v1.
+
+    El manifiesto no sustituye el resumen del finalizador: únicamente verifica
+    la presencia de los archivos que alguien declaró de forma independiente.
+    """
+    with ruta.open("r", encoding="utf-8") as archivo:
+        documento = json.load(archivo)
+
+    if (not isinstance(documento, dict)
+            or set(documento) != {"schema_version", "files"}
+            or type(documento["schema_version"]) is not int
+            or documento["schema_version"] != 1
+            or not isinstance(documento["files"], list)
+            or not documento["files"]):
+        raise ValueError(f"{ruta}: manifiesto inválido (versión o lista)")
+
+    base = ruta.resolve().parent
+    archivos = []
+    vistos = set()
+    for nombre in documento["files"]:
+        if not isinstance(nombre, str) or not nombre or "\\" in nombre:
+            raise ValueError(f"{ruta}: ruta de CSV inválida: {nombre!r}")
+        relativa = Path(nombre)
+        if relativa.is_absolute() or ".." in relativa.parts or relativa.suffix != ".csv":
+            raise ValueError(f"{ruta}: ruta de CSV no permitida: {nombre!r}")
+        destino = (base / relativa).resolve()
+        if not destino.is_relative_to(base):
+            raise ValueError(f"{ruta}: CSV fuera del directorio del manifiesto")
+        if destino in vistos:
+            raise ValueError(f"{ruta}: archivo duplicado en manifiesto: {nombre}")
+        vistos.add(destino)
+        if not destino.is_file():
+            raise ValueError(f"{ruta}: archivo CSV faltante: {nombre}")
+        archivos.append(destino)
+    return archivos
+
+
 def main():
     """Ejecuta las verificaciones seleccionadas desde la terminal."""
     parser = argparse.ArgumentParser(
@@ -425,22 +464,43 @@ def main():
     )
     parser.add_argument(
         "archivos",
-        nargs="+",
+        nargs="*",
         type=Path,
-        help="Archivos CSV de una misma instancia",
+        help="Archivos CSV de una misma instancia (opcional con --manifiesto)",
     )
     parser.add_argument(
         "--validar-ciclo",
         action="store_true",
         help="Comprueba JOIN, LEAVE y operaciones de participantes",
     )
+    parser.add_argument(
+        "--manifiesto",
+        type=Path,
+        help="JSON auxiliar que declara los CSV esperados de la instancia",
+    )
     args = parser.parse_args()
 
     try:
+        if args.manifiesto is not None:
+            rutas = cargar_manifiesto(args.manifiesto)
+            # Si también se proporcionan rutas, su conjunto debe coincidir
+            # exactamente con los CSV declarados en el manifiesto.
+            if args.archivos:
+                suministrados = [ruta.resolve() for ruta in args.archivos]
+                if (len(suministrados) != len(set(suministrados))
+                        or set(suministrados) != set(rutas)):
+                    raise ValueError(
+                        "Los archivos indicados no coinciden con el manifiesto"
+                    )
+        else:
+            rutas = args.archivos
+            if not rutas:
+                parser.error("se requieren CSV o la opción --manifiesto")
+
         registros = []
 
         # Leer todos los CSV para verificar los mensajes conjuntamente.
-        for ruta in args.archivos:
+        for ruta in rutas:
             registros.extend(leer_csv(ruta))
 
         errores, aceptados, extraidos = verificar_mensajes(registros)
@@ -460,7 +520,7 @@ def main():
         print("Verificación inicial correcta.")
         return 0
 
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
 
