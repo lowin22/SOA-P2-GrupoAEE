@@ -385,6 +385,18 @@ def verificar_mensajes(registros):
                 f"enqueue_seq alterada para {identidad}"
             )
 
+        # La marca de inserción viaja con el mensaje y no debe cambiar.
+        if entrada["enqueue_time_ns"] != salida["enqueue_time_ns"]:
+            errores.append(
+                f"enqueue_time_ns alterada para {identidad}"
+            )
+
+        # Además de comprobar SplitMix64 por fila, contrastar ambas copias.
+        if entrada["payload_hex"] != salida["payload_hex"]:
+            errores.append(
+                f"payload_hex diferente entre ENQUEUE y DEQUEUE: {identidad}"
+            )
+
     # Reconstruir ambos órdenes por los números globales,
     # nunca por el orden de las filas de los archivos CSV.
     orden_entrada = [

@@ -150,17 +150,27 @@ class TestVerificadorCSV(unittest.TestCase):
             )
 
     def test_mensajes_correctos(self):
-        """Dos mensajes insertados y extraídos en orden FIFO."""
-        filas = [
-            evento("producer", 1, "ENQUEUE", 100, 1, 1, 1, "", 1),
-            evento("producer", 1, "ENQUEUE", 200, 1, 2, 2, "", 2),
-            evento("consumer", 1, "DEQUEUE", 300, 1, 1, 1, 1, 1),
-            evento("consumer", 1, "DEQUEUE", 400, 1, 2, 2, 2, 0),
-        ]
+            """Dos mensajes insertados y extraídos en orden FIFO."""
+            filas = [
+                evento("producer", 1, "ENQUEUE", 100, 1, 1, 1, "", 1),
+                evento("producer", 1, "ENQUEUE", 200, 1, 2, 2, "", 2),
+                evento("consumer", 1, "DEQUEUE", 300, 1, 1, 1, 1, 1),
+                evento("consumer", 1, "DEQUEUE", 400, 1, 2, 2, 2, 0),
+            ]
 
-        resultado = self.ejecutar(filas)
-        self.assertEqual(resultado.returncode, 0, resultado.stderr)
-        self.assertIn("Verificación inicial correcta", resultado.stdout)
+            # La marca de inserción viaja dentro del mensaje.
+            # No cambia cuando un consumidor lo extrae.
+            columnas = filas[2].split(",")
+            columnas[10] = "100"
+            filas[2] = ",".join(columnas)
+
+            columnas = filas[3].split(",")
+            columnas[10] = "200"
+            filas[3] = ",".join(columnas)
+
+            resultado = self.ejecutar(filas)
+            self.assertEqual(resultado.returncode, 0, resultado.stderr)
+            self.assertIn("Verificación inicial correcta", resultado.stdout)
 
     def test_mensaje_perdido(self):
         """Un mensaje aceptado que nunca aparece como extraído."""
