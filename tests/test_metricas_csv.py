@@ -53,8 +53,58 @@ class TestMetricasCSV(unittest.TestCase):
             )
 
             for ruta, filas in (
-                (productor_csv, [insercion]),
-                (consumidor_csv, [extraccion]),
+                (productor_csv, [
+                    {
+                        **insercion,
+                        "event": "JOIN",
+                        "timestamp_ns": "90",
+                        "producer_id": "",
+                        "sequence": "",
+                        "enqueue_seq": "",
+                        "dequeue_seq": "",
+                        "enqueue_time_ns": "",
+                        "payload_hex": "",
+                        "occupancy": "0",
+                    },
+                    insercion,
+                    {
+                        **insercion,
+                        "event": "LEAVE",
+                        "timestamp_ns": "110",
+                        "producer_id": "",
+                        "sequence": "",
+                        "enqueue_seq": "",
+                        "dequeue_seq": "",
+                        "enqueue_time_ns": "",
+                        "payload_hex": "",
+                    },
+                ]),
+                (consumidor_csv, [
+                    {
+                        **extraccion,
+                        "event": "JOIN",
+                        "timestamp_ns": "95",
+                        "producer_id": "",
+                        "sequence": "",
+                        "enqueue_seq": "",
+                        "dequeue_seq": "",
+                        "enqueue_time_ns": "",
+                        "payload_hex": "",
+                        "occupancy": "1",
+                    },
+                    extraccion,
+                    {
+                        **extraccion,
+                        "event": "LEAVE",
+                        "timestamp_ns": "160",
+                        "producer_id": "",
+                        "sequence": "",
+                        "enqueue_seq": "",
+                        "dequeue_seq": "",
+                        "enqueue_time_ns": "",
+                        "payload_hex": "",
+                    },
+                ]),
             ):
                 with ruta.open("w", newline="", encoding="utf-8") as archivo:
                     escritor = csv.DictWriter(archivo, fieldnames=COLUMNAS)
@@ -97,6 +147,40 @@ class TestMetricasCSV(unittest.TestCase):
 
             self.assertIn("Payload inválido", str(contexto.exception))
 
+
+
+    def test_rechaza_operaciones_sin_join(self):
+        """No debe calcular métricas de participantes sin JOIN."""
+        with tempfile.TemporaryDirectory() as directorio:
+            base = Path(directorio)
+            productor = base / "productor.csv"
+            consumidor = base / "consumidor.csv"
+
+            payload = generar_payload(1, 1)
+
+            filas = (
+                (productor, [
+                    evento("producer", 1, "ENQUEUE", 100,
+                           1, 1, 1, None, 100, 1, payload)
+                ]),
+                (consumidor, [
+                    evento("consumer", 1, "DEQUEUE", 150,
+                           1, 1, 1, 1, 100, 0, payload)
+                ]),
+            )
+
+            for archivo_csv, registros in filas:
+                with archivo_csv.open(
+                    "w", newline="", encoding="utf-8"
+                ) as archivo:
+                    escritor = csv.DictWriter(
+                        archivo, fieldnames=COLUMNAS
+                    )
+                    escritor.writeheader()
+                    escritor.writerows(registros)
+
+            with self.assertRaisesRegex(ValueError, "sin JOIN"):
+                calcular_metricas_csv([productor, consumidor])
 
 
 if __name__ == "__main__":

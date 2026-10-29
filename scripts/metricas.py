@@ -113,7 +113,9 @@ def calcular_metricas_csv(rutas):
     No calcula throughput ni duración del cierre porque requieren
     marcas adicionales del finalizador.
     """
-    from scripts.verificar_csv import leer_csv, verificar_mensajes
+    from scripts.verificar_csv import (
+        leer_csv, verificar_mensajes, verificar_ciclo_vida
+    )
 
     registros = []
 
@@ -122,6 +124,9 @@ def calcular_metricas_csv(rutas):
         registros.extend(leer_csv(Path(ruta)))
 
     errores, aceptados, extraidos = verificar_mensajes(registros)
+
+    # Validar JOIN, LEAVE y operaciones de cada participante.
+    errores.extend(verificar_ciclo_vida(registros))
 
     if errores:
         raise ValueError(
@@ -136,3 +141,17 @@ def calcular_metricas_csv(rutas):
         "latency_mean_ns": calcular_latencia_promedio(latencias),
         "latency_p95_ns": calcular_percentil_95(latencias),
     }
+
+
+def calcular_metricas_manifiesto(ruta_manifiesto):
+    """Calcula métricas usando todos los CSV declarados.
+
+    El manifiesto se valida mediante las funciones del P2-11.
+    No acepta una selección parcial de archivos.
+    """
+    from pathlib import Path
+    from scripts.verificar_csv import cargar_manifiesto
+
+    rutas = cargar_manifiesto(Path(ruta_manifiesto))
+
+    return calcular_metricas_csv(rutas)
