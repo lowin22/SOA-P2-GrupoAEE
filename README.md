@@ -6,9 +6,9 @@ Proyecto de Sistemas Operativos Avanzados, II semestre de 2026. Se implementará
 cuatro programas C17 sobre GNU/Linux con memoria compartida POSIX: `creator`,
 `producer`, `consumer` y `finisher`.
 
-**Estado:** la validación de argumentos está implementada para los cuatro ejecutables
-(P2-04), y `creator` ya crea y publica la memoria compartida (P2-05). Los
-participantes, el intercambio en el buffer y el cierre siguen pendientes.
+**Estado:** están implementados argumentos (P2-04), creación y publicación de
+memoria compartida (P2-05), y conexiones, registro y retirada (P2-07). El
+intercambio en el buffer, los trabajadores completos y el cierre siguen pendientes.
 
 ## Integrantes
 
@@ -61,6 +61,15 @@ El [contrato de opciones](docs/OPCIONES.md) detalla formatos, errores, API y pru
 `finisher`: al retornar desmonta y cierra sus recursos privados, pero no ejecuta
 `shm_unlink`. Cada `soa_instance_open` entrega al llamador un descriptor, mapeo y
 bloqueo de vida que deben liberarse con `soa_instance_close`.
+
+El registro acepta IDs `1..1024` de forma independiente por rol y conserva el
+historial después de la retirada. Por ello puede haber hasta 1024 activos por rol,
+pero también como máximo 1024 registros históricos por rol durante toda la vida de
+la instancia: retirar un ID no libera su identidad para reutilización. Un trabajador
+completa operaciones y métricas antes de `soa_participant_unregister`; al
+confirmarse `LEAVE` ya no vuelve a tocar la instancia. El evento privado puede
+escribirse y cerrarse después sin bloquear al finalizador, cuyo resumen usa los
+acumuladores compartidos ya finalizados.
 
 ## Docker
 

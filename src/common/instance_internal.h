@@ -69,6 +69,8 @@ struct soa_instance {
     int fd;
     bool read_lock_held;
     bool registered;
+    soa_role_t role;
+    uint32_t participant_id;
     size_t mapped_size;
     soa_shared_instance_t *shared;
 };
