@@ -10,6 +10,9 @@ COMMON_OBJECTS := build/common/app.o build/common/options.o
 APP_OBJECTS := $(PROGRAMS:%=build/apps/%.o)
 OBJECTS := $(COMMON_OBJECTS) $(APP_OBJECTS) build/tests/options_test.o
 OPTIONS_TEST := build/tests/options_test
+WORKER_METRICS_TEST := build/tests/worker_metrics_test
+WORKER_METRICS_INVALID_TEST := build/tests/worker_metrics_invalid_test
+WORKER_METRICS_FULL_TEST := build/tests/worker_metrics_full_test
 CSV_WRITER_TEST := build/tests/csv_writer_test
 CSV_WRITER_INVALID_TEST := build/tests/csv_writer_invalid_test
 CSV_WRITER_IO_TEST := build/tests/csv_writer_io_test
@@ -62,12 +65,30 @@ test-csv-writer: $(CSV_WRITER_TEST) $(CSV_WRITER_INVALID_TEST) $(CSV_WRITER_IO_T
 	./$(CSV_WRITER_STATE_TEST) results/runs/prueba_csv_estado.csv
 	$(PYTHON) -c 'from pathlib import Path; p = Path("results/runs/prueba_csv_invalido.csv"); assert len(p.read_text().splitlines()) == 1, "CSV invalido contiene filas parciales"'
 
+$(WORKER_METRICS_TEST): build/tests/worker_metrics_test.o build/common/worker_metrics.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
+
+$(WORKER_METRICS_INVALID_TEST): build/tests/worker_metrics_invalid_test.o build/common/worker_metrics.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
+
+$(WORKER_METRICS_FULL_TEST): build/tests/worker_metrics_full_test.o build/common/worker_metrics.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
+
+.PHONY: test-worker-metrics
+test-worker-metrics: $(WORKER_METRICS_TEST) $(WORKER_METRICS_INVALID_TEST) $(WORKER_METRICS_FULL_TEST)
+	mkdir -p results/runs
+	./$(WORKER_METRICS_TEST) results/runs/prueba_worker_metrics.csv
+	./$(WORKER_METRICS_INVALID_TEST) results/runs/prueba_worker_metrics_invalido.csv
+	./$(WORKER_METRICS_FULL_TEST)
+	$(PYTHON) -c 'import csv; from pathlib import Path; p=Path("results/runs/prueba_worker_metrics.csv"); r=csv.DictReader(p.open()); rows=list(r); assert len(r.fieldnames)==8 and len(rows)==2'
+	$(PYTHON) -c 'from pathlib import Path; p=Path("results/runs/prueba_worker_metrics_invalido.csv"); assert len(p.read_text().splitlines())==1'
+
 test-options: all $(OPTIONS_TEST)
 	./$(OPTIONS_TEST)
 	bash tests/arguments.sh
 
 # Ejecuta las pruebas de argumentos y las pruebas Python disponibles
-test: test-options smoke test-python test-csv-writer
+test: test-options smoke test-python test-csv-writer test-worker-metrics
 	@echo 'OK: pruebas disponibles ejecutadas.'
 	@echo 'PENDIENTE: pruebas funcionales C del buffer, concurrencia y cierre.'
 
@@ -100,3 +121,8 @@ help:
     build/tests/csv_writer_io_test.d \
     build/tests/csv_writer_state_test.d \
     build/tests/csv_writer_full_test.d
+
+-include build/common/worker_metrics.d \
+    build/tests/worker_metrics_test.d \
+    build/tests/worker_metrics_invalid_test.d \
+    build/tests/worker_metrics_full_test.d
