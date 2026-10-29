@@ -104,3 +104,35 @@ def extraer_latencias(registros):
         latencias.append(tiempo_extraccion - tiempo_insercion)
 
     return latencias
+
+
+def calcular_metricas_csv(rutas):
+    """Calcula métricas a partir de archivos CSV previamente verificados.
+
+    Reutiliza el verificador P2-11 y rechaza registros inconsistentes.
+    No calcula throughput ni duración del cierre porque requieren
+    marcas adicionales del finalizador.
+    """
+    from scripts.verificar_csv import leer_csv, verificar_mensajes
+
+    registros = []
+
+    for ruta in rutas:
+        from pathlib import Path
+        registros.extend(leer_csv(Path(ruta)))
+
+    errores, aceptados, extraidos = verificar_mensajes(registros)
+
+    if errores:
+        raise ValueError(
+            "Registros CSV inválidos: " + "; ".join(errores)
+        )
+
+    latencias = extraer_latencias(registros)
+
+    return {
+        "accepted": aceptados,
+        "extracted": extraidos,
+        "latency_mean_ns": calcular_latencia_promedio(latencias),
+        "latency_p95_ns": calcular_percentil_95(latencias),
+    }
