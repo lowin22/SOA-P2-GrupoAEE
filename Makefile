@@ -88,7 +88,7 @@ test-options: all $(OPTIONS_TEST)
 	bash tests/arguments.sh
 
 # Ejecuta las pruebas de argumentos y las pruebas Python disponibles
-test: test-options smoke test-python test-csv-writer test-worker-metrics
+test: test-options smoke test-python test-csv-writer test-worker-metrics test-summary-writer
 	@echo 'OK: pruebas disponibles ejecutadas.'
 	@echo 'PENDIENTE: pruebas funcionales C del buffer, concurrencia y cierre.'
 
@@ -126,3 +126,39 @@ help:
     build/tests/worker_metrics_test.d \
     build/tests/worker_metrics_invalid_test.d \
     build/tests/worker_metrics_full_test.d
+
+
+SUMMARY_WRITER_TESTS := \
+    build/tests/summary_writer_test \
+    build/tests/summary_writer_empty_test \
+    build/tests/summary_writer_invalid_test \
+    build/tests/summary_writer_full_test
+
+build/tests/summary_writer_test: build/tests/summary_writer_test.o build/common/summary_writer.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -lm -o "$@"
+
+build/tests/summary_writer_empty_test: build/tests/summary_writer_empty_test.o build/common/summary_writer.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -lm -o "$@"
+
+build/tests/summary_writer_invalid_test: build/tests/summary_writer_invalid_test.o build/common/summary_writer.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -lm -o "$@"
+
+build/tests/summary_writer_full_test: build/tests/summary_writer_full_test.o build/common/summary_writer.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -lm -o "$@"
+
+.PHONY: test-summary-writer
+test-summary-writer: $(SUMMARY_WRITER_TESTS)
+	mkdir -p results/runs
+	./build/tests/summary_writer_test results/runs/prueba_summary.csv
+	./build/tests/summary_writer_empty_test results/runs/prueba_summary_vacio.csv
+	./build/tests/summary_writer_invalid_test results/runs/prueba_summary_invalido.csv
+	./build/tests/summary_writer_full_test
+	$(PYTHON) -c 'import csv; from pathlib import Path; p=Path("results/runs/prueba_summary.csv"); r=csv.DictReader(p.open()); rows=list(r); assert len(r.fieldnames)==14 and len(rows)==1 and rows[0]["accepted"]=="10"'
+	$(PYTHON) -c 'import csv; from pathlib import Path; p=Path("results/runs/prueba_summary_vacio.csv"); rows=list(csv.DictReader(p.open())); assert len(rows)==1 and rows[0]["throughput_msg_s"]=="" and rows[0]["latency_mean_ns"]==""'
+	$(PYTHON) -c 'from pathlib import Path; p=Path("results/runs/prueba_summary_invalido.csv"); assert len(p.read_text().splitlines())==1'
+
+-include build/common/summary_writer.d \
+    build/tests/summary_writer_test.d \
+    build/tests/summary_writer_empty_test.d \
+    build/tests/summary_writer_invalid_test.d \
+    build/tests/summary_writer_full_test.d
