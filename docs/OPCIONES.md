@@ -60,8 +60,9 @@ positivo y puede truncarse si es pequeño. Las cadenas de salida pertenecen a
 Los cuatro puntos de entrada conservan el nombre existente `soa_app_main` y le
 pasan el tipo de programa. La ayuda sale por stdout con código cero. Los errores
 salen por stderr con código no cero. La operación siempre queda después del parseo.
-Actualmente los argumentos válidos alcanzan un diagnóstico explícito de operación
-pendiente y código no cero porque aún falta implementar la ejecución IPC.
+`creator` continúa con la creación de P2-05 y retorna éxito cuando publica la
+instancia. Los otros programas aún emiten un diagnóstico de operación pendiente y
+código no cero tras recibir argumentos válidos.
 
 ## Pruebas
 

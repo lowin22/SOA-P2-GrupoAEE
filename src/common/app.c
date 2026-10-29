@@ -3,6 +3,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "soa/instance.h"
+#include "soa/types.h"
+
+static const char *instance_error(soa_status_t status)
+{
+    switch (status) {
+    case SOA_INVALID_ARGUMENT:
+        return "nombre o capacidad invalidos";
+    case SOA_EXISTS:
+        return "ya existe una instancia con ese nombre";
+    case SOA_SYSTEM_ERROR:
+        return "fallo una operacion del sistema";
+    default:
+        return "error inesperado";
+    }
+}
+
 int soa_app_main(int argc, char *argv[], program_t program, const char *name,
                  const char *description, const char *options)
 {
@@ -35,9 +52,12 @@ int soa_app_main(int argc, char *argv[], program_t program, const char *name,
             puts("--summary: ruta no vacia del resumen; no se abre al validar.");
         }
         puts("Todas las opciones mostradas son obligatorias salvo --messages.\n"
-             "Ver docs/OPCIONES.md para el contrato completo.\n\n"
-             "Estado: cáscara inicial; funcionalidad pendiente de implementación.\n"
-             "La validacion de argumentos esta implementada. No se crean recursos IPC.");
+              "Ver docs/OPCIONES.md para el contrato completo.");
+        if (program == PROGRAM_CREATOR) {
+            puts("\nEstado: creación y publicación de memoria compartida implementadas.");
+        } else {
+            puts("\nEstado: funcionalidad pendiente de implementación para este programa.");
+        }
         return EXIT_SUCCESS;
     }
 
@@ -46,7 +66,19 @@ int soa_app_main(int argc, char *argv[], program_t program, const char *name,
         return EXIT_FAILURE;
     }
 
-    /* La operacion se integrara despues de validar los argumentos */
+    if (program == PROGRAM_CREATOR) {
+        soa_status_t status = soa_instance_create(parsed.name, parsed.capacity);
+
+        if (status != SOA_OK) {
+            fprintf(stderr, "%s: %s (%s).\n", name, instance_error(status),
+                    parsed.name);
+            return EXIT_FAILURE;
+        }
+        printf("Instancia %s creada con capacidad %u.\n", parsed.name,
+               parsed.capacity);
+        return EXIT_SUCCESS;
+    }
+
     fprintf(stderr, "%s: argumentos validos; funcionalidad pendiente de implementación.\n",
             name);
     return EXIT_FAILURE;

@@ -4,7 +4,8 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd -- "$root"
 test_dir=$(mktemp -d)
-trap 'rm -rf -- "$test_dir"' EXIT
+creator_name="/soa_p2_args_$$"
+trap 'rm -f -- "/dev/shm/${creator_name#/}"; rm -rf -- "$test_dir"' EXIT
 printf 'existing log must survive\n' > "$test_dir/existing.csv"
 cp -- "$test_dir/existing.csv" "$test_dir/expected.csv"
 
@@ -35,8 +36,11 @@ for program in creator producer consumer finisher; do
     expect_error 'valor' "./$program" --name --help
 done
 
-# Los casos validos deben llegar al aviso de operacion pendiente
-expect_error 'argumentos validos' ./creator --capacity 1024 --name /args_valid
+# Creator ejecuta P2-05 después de validar; los demás conservan operación pendiente.
+./creator --capacity 1024 --name "$creator_name" > "$test_dir/stdout" \
+    2> "$test_dir/stderr"
+[[ ! -s "$test_dir/stderr" ]]
+LC_ALL=C grep -Fq -- 'creada con capacidad 1024' "$test_dir/stdout"
 expect_error 'argumentos validos' ./producer --name /args_valid --id 1024 \
     --mean-ms 1000 --seed 18446744073709551615 --messages 1 --log "$test_dir/new.csv"
 expect_error 'argumentos validos' ./producer --name /args_valid --id 1 \
