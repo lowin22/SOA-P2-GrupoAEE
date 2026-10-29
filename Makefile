@@ -12,6 +12,9 @@ OBJECTS := $(COMMON_OBJECTS) $(APP_OBJECTS) build/tests/options_test.o
 OPTIONS_TEST := build/tests/options_test
 CSV_WRITER_TEST := build/tests/csv_writer_test
 CSV_WRITER_INVALID_TEST := build/tests/csv_writer_invalid_test
+CSV_WRITER_IO_TEST := build/tests/csv_writer_io_test
+CSV_WRITER_STATE_TEST := build/tests/csv_writer_state_test
+CSV_WRITER_FULL_TEST := build/tests/csv_writer_full_test
 
 .PHONY: all clean smoke test test-options test-python help
 all: $(PROGRAMS)
@@ -39,12 +42,24 @@ $(CSV_WRITER_TEST): build/tests/csv_writer_test.o build/common/csv_writer.o
 $(CSV_WRITER_INVALID_TEST): build/tests/csv_writer_invalid_test.o build/common/csv_writer.o
 	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
 
+$(CSV_WRITER_IO_TEST): build/tests/csv_writer_io_test.o build/common/csv_writer.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
+
+$(CSV_WRITER_STATE_TEST): build/tests/csv_writer_state_test.o build/common/csv_writer.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
+
+$(CSV_WRITER_FULL_TEST): build/tests/csv_writer_full_test.o build/common/csv_writer.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
+
 .PHONY: test-csv-writer
-test-csv-writer: $(CSV_WRITER_TEST) $(CSV_WRITER_INVALID_TEST)
+test-csv-writer: $(CSV_WRITER_TEST) $(CSV_WRITER_INVALID_TEST) $(CSV_WRITER_IO_TEST) $(CSV_WRITER_STATE_TEST) $(CSV_WRITER_FULL_TEST)
 	mkdir -p results/runs
 	./$(CSV_WRITER_TEST) results/runs/prueba_productor.csv results/runs/prueba_consumidor.csv
 	$(PYTHON) scripts/verificar_csv.py results/runs/prueba_productor.csv results/runs/prueba_consumidor.csv --validar-ciclo
 	./$(CSV_WRITER_INVALID_TEST) results/runs/prueba_csv_invalido.csv
+	./$(CSV_WRITER_IO_TEST)
+	./$(CSV_WRITER_FULL_TEST)
+	./$(CSV_WRITER_STATE_TEST) results/runs/prueba_csv_estado.csv
 	$(PYTHON) -c 'from pathlib import Path; p = Path("results/runs/prueba_csv_invalido.csv"); assert len(p.read_text().splitlines()) == 1, "CSV invalido contiene filas parciales"'
 
 test-options: all $(OPTIONS_TEST)
@@ -81,4 +96,7 @@ help:
 -include $(OBJECTS:.o=.d) \
     build/common/csv_writer.d \
     build/tests/csv_writer_test.d \
-    build/tests/csv_writer_invalid_test.d
+    build/tests/csv_writer_invalid_test.d \
+    build/tests/csv_writer_io_test.d \
+    build/tests/csv_writer_state_test.d \
+    build/tests/csv_writer_full_test.d
