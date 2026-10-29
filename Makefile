@@ -6,11 +6,12 @@ override LDLIBS += -pthread
 
 PYTHON ?= python3
 PROGRAMS := creator producer consumer finisher
-COMMON_OBJECTS := build/common/app.o
+COMMON_OBJECTS := build/common/app.o build/common/options.o
 APP_OBJECTS := $(PROGRAMS:%=build/apps/%.o)
-OBJECTS := $(COMMON_OBJECTS) $(APP_OBJECTS)
+OBJECTS := $(COMMON_OBJECTS) $(APP_OBJECTS) build/tests/options_test.o
+OPTIONS_TEST := build/tests/options_test
 
-.PHONY: all clean smoke test test-python help
+.PHONY: all clean smoke test test-options test-python help
 all: $(PROGRAMS)
 
 $(PROGRAMS): %: build/apps/%.o $(COMMON_OBJECTS)
@@ -23,10 +24,19 @@ build/%.o: src/%.c
 smoke: all
 	bash tests/smoke.sh
 
-# En la fase de cáscara, smoke valida la interfaz inicial.
-# No verifica el buffer, la concurrencia ni el cierre.
-# Las pruebas Python se incorporan automáticamente al integrarse P2-11.
-test: smoke test-python
+build/tests/%.o: tests/%.c
+	mkdir -p "$(@D)"
+	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c "$<" -o "$@"
+
+$(OPTIONS_TEST): build/tests/options_test.o build/common/options.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
+
+test-options: all $(OPTIONS_TEST)
+	./$(OPTIONS_TEST)
+	bash tests/arguments.sh
+
+# Ejecuta las pruebas de argumentos y las pruebas Python disponibles
+test: test-options smoke test-python
 	@echo 'OK: pruebas disponibles ejecutadas.'
 	@echo 'PENDIENTE: pruebas funcionales C del buffer, concurrencia y cierre.'
 
@@ -45,9 +55,10 @@ clean:
 	rm -f $(PROGRAMS)
 
 help:
-	@echo 'all: compilar los cuatro ejecutables iniciales'
+	@echo 'all: compilar los cuatro ejecutables con validacion de argumentos'
 	@echo 'smoke: comprobar la interfaz inicial de la cáscara'
-	@echo 'test: ejecutar smoke y pruebas Python disponibles (suite funcional C pendiente)'
+	@echo 'test: ejecutar argumentos, smoke y pruebas Python disponibles'
+	@echo 'test-options: comprobar el parser y los argumentos de los cuatro ejecutables'
 	@echo 'test-python: ejecutar los test_*.py disponibles sin necesitar los ejecutables C'
 	@echo 'clean: eliminar objetos y ejecutables generados'
 

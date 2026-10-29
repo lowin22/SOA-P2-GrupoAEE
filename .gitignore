@@ -80,5 +80,8 @@ __pycache__/
 !/docs/FORMATOS_CSV.md
 !/docs/PRUEBAS.md
 
+# Documentacion de argumentos
+!/docs/OPCIONES.md
+
 # Configuración local de Visual Studio Code.
 /.vscode/
