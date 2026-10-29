@@ -9,6 +9,11 @@ cuatro programas C17 sobre GNU/Linux con memoria compartida POSIX: `creator`,
 **Estado: cáscara inicial.** Solo se implementa `--help` y el rechazo explícito de
 operaciones pendientes. Todavía no se crean recursos IPC ni se intercambian mensajes.
 
+El módulo de buffer de P2-06 está implementado y se comprueba con `make test-buffer`
+Incluye operaciones FIFO y pruebas entre procesos con condiciones compartidas
+La integración con creación y registro sigue pendiente de P2-05 y P2-07
+El [contrato del buffer](docs/BUFFER.md) describe bloqueos, retornos y pruebas
+
 ## Integrantes
 
 | Nombre completo | Carné | Usuario de GitHub |

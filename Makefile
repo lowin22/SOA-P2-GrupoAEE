@@ -6,11 +6,12 @@ override LDLIBS += -pthread
 
 PYTHON ?= python3
 PROGRAMS := creator producer consumer finisher
-COMMON_OBJECTS := build/common/app.o
+COMMON_OBJECTS := build/common/app.o build/common/buffer.o
 APP_OBJECTS := $(PROGRAMS:%=build/apps/%.o)
-OBJECTS := $(COMMON_OBJECTS) $(APP_OBJECTS)
+OBJECTS := $(COMMON_OBJECTS) $(APP_OBJECTS) build/tests/buffer_test.o
+BUFFER_TEST := build/tests/buffer_test
 
-.PHONY: all clean smoke test test-python help
+.PHONY: all clean smoke test test-buffer test-python help
 all: $(PROGRAMS)
 
 $(PROGRAMS): %: build/apps/%.o $(COMMON_OBJECTS)
@@ -23,12 +24,20 @@ build/%.o: src/%.c
 smoke: all
 	bash tests/smoke.sh
 
-# En la fase de cáscara, smoke valida la interfaz inicial.
-# No verifica el buffer, la concurrencia ni el cierre.
-# Las pruebas Python se incorporan automáticamente al integrarse P2-11.
-test: smoke test-python
+build/tests/%.o: tests/%.c
+	mkdir -p "$(@D)"
+	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c "$<" -o "$@"
+
+$(BUFFER_TEST): build/tests/buffer_test.o build/common/buffer.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
+
+test-buffer: $(BUFFER_TEST)
+	./$(BUFFER_TEST)
+
+# Ejecuta las pruebas disponibles sin atribuir cobertura del sistema completo
+test: smoke test-buffer test-python
 	@echo 'OK: pruebas disponibles ejecutadas.'
-	@echo 'PENDIENTE: pruebas funcionales C del buffer, concurrencia y cierre.'
+	@echo 'PENDIENTE: integracion con creator, registro, trabajadores y finisher.'
 
 test-python:
 	@if find tests -maxdepth 1 -type f -name 'test_*.py' -print -quit | grep -q .; then \
@@ -47,7 +56,8 @@ clean:
 help:
 	@echo 'all: compilar los cuatro ejecutables iniciales'
 	@echo 'smoke: comprobar la interfaz inicial de la cáscara'
-	@echo 'test: ejecutar smoke y pruebas Python disponibles (suite funcional C pendiente)'
+	@echo 'test: ejecutar smoke, buffer y pruebas Python disponibles'
+	@echo 'test-buffer: comprobar FIFO, bloqueo y cierre del modulo entre procesos'
 	@echo 'test-python: ejecutar los test_*.py disponibles sin necesitar los ejecutables C'
 	@echo 'clean: eliminar objetos y ejecutables generados'
 
