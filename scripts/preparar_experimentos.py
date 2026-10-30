@@ -45,7 +45,7 @@ columnas = [
 ]
 
 with salida.open("w", newline="", encoding="utf-8") as archivo:
-    escritor = csv.DictWriter(archivo, fieldnames=columnas)
+    escritor = csv.DictWriter(archivo, fieldnames=columnas, lineterminator="\n")
     escritor.writeheader()
 
     for numero, (capacidad, escenario, repeticion) in enumerate(
