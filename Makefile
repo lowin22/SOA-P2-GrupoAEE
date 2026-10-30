@@ -6,12 +6,16 @@ override LDLIBS += -pthread
 
 PYTHON ?= python3
 PROGRAMS := creator producer consumer finisher
-COMMON_OBJECTS := build/common/app.o build/common/options.o
+COMMON_OBJECTS := build/common/app.o build/common/options.o \
+	build/common/instance.o build/common/participants.o
 APP_OBJECTS := $(PROGRAMS:%=build/apps/%.o)
 OBJECTS := $(COMMON_OBJECTS) $(APP_OBJECTS) build/tests/options_test.o
 OPTIONS_TEST := build/tests/options_test
+INSTANCE_TEST := build/tests/test_instance
+PARTICIPANTS_TEST := build/tests/test_participants
 
-.PHONY: all clean smoke test test-options test-python help
+.PHONY: all clean smoke test test-options test-instance test-participants \
+	test-python help
 all: $(PROGRAMS)
 
 $(PROGRAMS): %: build/apps/%.o $(COMMON_OBJECTS)
@@ -35,8 +39,23 @@ test-options: all $(OPTIONS_TEST)
 	./$(OPTIONS_TEST)
 	bash tests/arguments.sh
 
+$(INSTANCE_TEST): tests/test_instance.c build/common/instance.o
+	mkdir -p "$(@D)"
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDLIBS) -o "$@"
+
+test-instance: all $(INSTANCE_TEST)
+	./$(INSTANCE_TEST)
+
+$(PARTICIPANTS_TEST): tests/test_participants.c build/common/instance.o \
+		build/common/participants.o
+	mkdir -p "$(@D)"
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDLIBS) -o "$@"
+
+test-participants: all $(PARTICIPANTS_TEST)
+	./$(PARTICIPANTS_TEST)
+
 # Ejecuta las pruebas de argumentos y las pruebas Python disponibles
-test: test-options smoke test-python
+test: test-options test-instance test-participants smoke test-python
 	@echo 'OK: pruebas disponibles ejecutadas.'
 	@echo 'PENDIENTE: pruebas funcionales C del buffer, concurrencia y cierre.'
 
@@ -55,10 +74,12 @@ clean:
 	rm -f $(PROGRAMS)
 
 help:
-	@echo 'all: compilar los cuatro ejecutables con validacion de argumentos'
+	@echo 'all: compilar los cuatro ejecutables disponibles'
 	@echo 'smoke: comprobar la interfaz inicial de la cáscara'
-	@echo 'test: ejecutar argumentos, smoke y pruebas Python disponibles'
+	@echo 'test: ejecutar argumentos, memoria compartida, smoke y pruebas Python'
 	@echo 'test-options: comprobar el parser y los argumentos de los cuatro ejecutables'
+	@echo 'test-instance: comprobar memoria compartida y creator'
+	@echo 'test-participants: comprobar registro, IDs y retirada'
 	@echo 'test-python: ejecutar los test_*.py disponibles sin necesitar los ejecutables C'
 	@echo 'clean: eliminar objetos y ejecutables generados'
 

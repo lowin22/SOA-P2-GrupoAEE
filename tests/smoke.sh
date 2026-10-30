@@ -19,8 +19,8 @@ expect_failure() {
 for program in creator producer consumer finisher; do
     [[ -x "./$program" ]] || { printf 'Falta %s\n' "$program" >&2; exit 1; }
     output=$("./$program" --help)
-    [[ "$output" == *"$program"* && "$output" == *'Uso previsto:'* &&
-       "$output" == *'pendiente de implementación'* ]] || {
+    [[ "$output" == *"$program"* &&
+       ( "$output" == *'Uso previsto:'* || "$output" == *'Uso:'* ) ]] || {
         printf 'ERROR: ayuda incompleta de %s\n' "$program" >&2
         exit 1
     }
@@ -29,9 +29,9 @@ for program in creator producer consumer finisher; do
     expect_failure "./$program" --help --unknown
 done
 
-expect_failure ./creator --name /soa_p2_smoke --capacity 8
+expect_failure ./creator --name invalid --capacity 8
 expect_failure ./producer --name /soa_p2_smoke --id 1 --mean-ms 0 --seed 1 --messages 1 --log unused.csv
 expect_failure ./consumer --name /soa_p2_smoke --id 1 --mean-ms 0 --seed 2 --log unused.csv
 expect_failure ./finisher --name /soa_p2_smoke --summary unused.csv
 
-printf 'OK: infraestructura de la cáscara (no valida buffer ni cierre).\n'
+printf 'OK: ejecutables y validación básica de argumentos.\n'
