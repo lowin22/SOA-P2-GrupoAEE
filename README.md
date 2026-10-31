@@ -6,8 +6,6 @@ Proyecto de Sistemas Operativos Avanzados, II semestre de 2026. Se implementará
 cuatro programas C17 sobre GNU/Linux con memoria compartida POSIX: `creator`,
 `producer`, `consumer` y `finisher`.
 
-**Estado: cáscara inicial.** Solo se implementa `--help` y el rechazo explícito de
-operaciones pendientes. Todavía no se crean recursos IPC ni se intercambian mensajes.
 
 ## Integrantes
 
@@ -23,6 +21,7 @@ Requisitos: GNU/Linux, GCC con C17, GNU Make y Bash.
 
 ```bash
 make -j
+make test
 make smoke
 ./creator --help
 ./producer --help
@@ -33,8 +32,41 @@ make clean
 
 Se compila con `-std=c17 -Wall -Wextra -Wpedantic -Werror -pthread`.
 Los binarios se generan en la raíz y los objetos/dependencias en `build/`.
-`make test` devuelve error deliberadamente hasta integrar pruebas funcionales;
-`make smoke` solo valida infraestructura. `make help` describe los objetivos.
+`make test` ejecuta la cobertura disponible de argumentos e infraestructura y falla
+ante incumplimientos. Incluye las suites de P2-04 y P2-05, pero no acredita todavía
+el buffer ni el cierre. `make help` describe los objetivos disponibles.
+
+## Opciones de los ejecutables
+
+```bash
+./creator --name /grupo_aee --capacity 8
+./producer --name /grupo_aee --id 1 --mean-ms 5 --seed 21 --messages 1000 --log results/p1.csv
+./consumer --name /grupo_aee --id 1 --mean-ms 10 --seed 11 --log results/c1.csv
+./finisher --name /grupo_aee --summary results/resumen.csv
+```
+
+`creator` ejecuta la operación de creación; los otros tres ejemplos solo alcanzan
+por ahora la validación sintáctica.
+Solo `--messages` es opcional: omitirla significa producir hasta cierre.
+Capacidad e IDs: 1..1024; media finita: 0..1000 ms; semilla: 0..`UINT64_MAX`;
+cuota explícita: 1..`UINT64_MAX`. Nombres: `/` y caracteres ASCII alfanuméricos,
+`_` o `-`, máximo 255 bytes totales. Opciones completas, en cualquier orden,
+sin repeticiones; `--help` se usa solo. Los IDs usados se comprueban en P2-07.
+El [contrato de opciones](docs/OPCIONES.md) detalla formatos, errores, API y pruebas.
+
+`soa_instance_create` conserva la propiedad del nombre publicado para el futuro
+`finisher`: al retornar desmonta y cierra sus recursos privados, pero no ejecuta
+`shm_unlink`. Cada `soa_instance_open` entrega al llamador un descriptor, mapeo y
+bloqueo de vida que deben liberarse con `soa_instance_close`.
+
+El registro acepta IDs `1..1024` de forma independiente por rol y conserva el
+historial después de la retirada. Por ello puede haber hasta 1024 activos por rol,
+pero también como máximo 1024 registros históricos por rol durante toda la vida de
+la instancia: retirar un ID no libera su identidad para reutilización. Un trabajador
+completa operaciones y métricas antes de `soa_participant_unregister`; al
+confirmarse `LEAVE` ya no vuelve a tocar la instancia. El evento privado puede
+escribirse y cerrarse después sin bloquear al finalizador, cuyo resumen usa los
+acumuladores compartidos ya finalizados.
 
 ## Docker
 
@@ -68,7 +100,7 @@ recompilar para no mezclar objetos de entornos distintos.
 |---|---|
 | `src/apps/` | Cuatro puntos de entrada independientes. |
 | `src/common/`, `include/soa/` | Módulos compartidos e interfaces. |
-| `tests/` | Comprobaciones iniciales; futura suite funcional. |
+| `tests/` | Parser público, argumentos CLI, aislamiento e infraestructura; futura suite del buffer. |
 | `scripts/` | Futuro verificador y experimentos. |
 | `results/` | Instrucciones y futura evidencia seleccionada. |
 | `docs/` | Diseño, planificación y contratos. |

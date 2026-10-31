@@ -2,6 +2,7 @@
 
 int main(int argc, char *argv[])
 {
-    return soa_app_main(argc, argv, "creator", "crear e inicializar una instancia",
+    return soa_app_main(argc, argv, PROGRAM_CREATOR, "creator",
+                        "crear e inicializar una instancia",
                         "--name /instancia --capacity N");
 }

@@ -67,8 +67,27 @@ __pycache__/
 *.pyc
 .env
 
-# Mantener fuera los planes locales, pero versionar los entregables de P2-01.
+
+# Mantener fuera los planes locales.
+# Permitir únicamente los documentos oficiales de cada Issue.
 /docs/*
+
+# Documentos del Issue P2-01, desarrollados por Edwin.
 !/docs/ARQUITECTURA.md
 !/docs/PROTOCOLO.md
+
+# Documentos del Issue P2-03, desarrollados por Esteban.
+!/docs/FORMATOS_CSV.md
+!/docs/PRUEBAS.md
+
+# Documentacion de argumentos
+!/docs/OPCIONES.md
+
+# Documentacion del buffer
+!/docs/BUFFER.md
+
+# Documentacion de trabajadores
+!/docs/TRABAJADORES.md
+
+# Configuración local de Visual Studio Code.
 /.vscode/
