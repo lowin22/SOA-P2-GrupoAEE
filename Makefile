@@ -158,7 +158,7 @@ help:
 	@echo 'test-participants: comprobar registro, IDs y retirada'
 	@echo 'test-workers: comprobar productores, consumidores, pausas y cierre'
 	@echo 'test-buffer comprueba FIFO e integracion con memoria y registro'
-	@echo 'test-shutdown: comprobar cierre, precondiciones, resumen y recreación'
+	@echo 'test-shutdown: comprobar intercalados, precondiciones, resumen y recreación'
 	@echo 'test-python: ejecutar los test_*.py disponibles sin necesitar los ejecutables C'
 	@echo 'clean: eliminar objetos y ejecutables generados'
 
