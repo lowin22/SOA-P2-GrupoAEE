@@ -124,6 +124,77 @@ class WorkerTests(unittest.TestCase):
         self.finish(consumer)
         self.assertEqual(self.control()["extracted"], 0)
 
+
+    def test_p212_reanudacion_buffer_vacio(self):
+        """El consumidor continúa cuando llega un productor."""
+
+        # Iniciar el consumidor sin mensajes disponibles.
+        consumer = self.start("consumer", mean="0")
+
+        # Confirmar que está registrado y que el buffer está vacío.
+        self.wait_state(
+            lambda s: s["consumers"] == 1 and s["occupancy"] == 0
+        )
+        self.assertIsNone(consumer.poll())
+
+        # Incorporar un productor con una cuota de dos mensajes.
+        producer = self.start("producer", mean="0", messages=2)
+        self.finish(producer)
+
+        # Comprobar que ambos mensajes fueron extraídos.
+        self.wait_state(
+            lambda s: s["accepted"] == 2 and s["extracted"] == 2
+        )
+
+        # Solicitar el cierre y esperar al consumidor.
+        self.control("close")
+        self.finish(consumer)
+
+        # Comprobar conservación y registros CSV.
+        estado = self.control()
+        self.assertEqual(estado["occupancy"], 0)
+        self.assertEqual(estado["producers"] + estado["consumers"], 0)
+        self.assertGreater(estado["condition_wait"], 0)
+        self.verify_logs()
+
+    def test_p212_reanudacion_buffer_lleno(self):
+        """El productor continúa cuando llega un consumidor."""
+
+        # Iniciar dos inserciones con capacidad de un mensaje.
+        producer = self.start("producer", mean="0", messages=2)
+
+        # Confirmar que el primer mensaje ocupa todo el buffer.
+        self.wait_state(
+            lambda s: s["producers"] == 1
+            and s["occupancy"] == 1
+            and s["accepted"] == 1
+        )
+
+        # El productor todavía no puede terminar su cuota.
+        self.assertIsNone(producer.poll())
+
+        # Incorporar un consumidor para liberar espacio.
+        consumer = self.start("consumer", mean="0")
+
+        # Comprobar que el productor logra terminar.
+        self.finish(producer)
+
+        # Comprobar que ambos mensajes fueron extraídos.
+        self.wait_state(
+            lambda s: s["accepted"] == 2 and s["extracted"] == 2
+        )
+
+        # Cerrar la instancia y esperar al consumidor.
+        self.control("close")
+        self.finish(consumer)
+
+        # Verificar que todos los mensajes se conservaron.
+        estado = self.control()
+        self.assertEqual(estado["occupancy"], 0)
+        self.assertEqual(estado["producers"] + estado["consumers"], 0)
+        self.assertGreater(estado["condition_wait"], 0)
+        self.verify_logs()
+
     def test_close_interrupts_producer_pause(self):
         consumer = self.start("consumer")
         self.wait_state(lambda s: s["consumers"] == 1)

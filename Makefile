@@ -124,7 +124,7 @@ $(BUFFER_INTEGRATION): build/tests/buffer_integration.o build/common/buffer.o \
 
 test-buffer: all $(BUFFER_TEST) $(BUFFER_INTEGRATION)
 	./$(BUFFER_TEST)
-	bash tests/buffer_integration.sh "$(PYTHON)"
+	timeout --signal=TERM --kill-after=5s 90s bash tests/buffer_integration.sh "$(PYTHON)"
 
 $(SHUTDOWN_TEST): tests/test_shutdown.c build/common/instance.o \
 		build/common/participants.o build/common/buffer.o build/common/timing.o \
