@@ -64,7 +64,8 @@ Por cada corrida conservar: nombres de instancia, parámetros, semillas individu
 
 | Caso | Comando / script ejecutado | Resultado esperado | Resultado obtenido | Evidencia | Estado |
 |---|---|---|---|---|---|
-| T01–T17 | Pendiente | Según matriz | No ejecutado | Pendiente | Pendiente |
+| T01–T06, T12–T17 | Pendiente de consolidación | Según matriz | Cobertura parcial | Secciones 7 y 9 | Pendiente |
+| T07–T11 (P2-13) | `make -j4 test-shutdown` | Corte ordenado, conservación, rechazo tardío y destrucción única | Todos los intercalados terminaron con código 0 | `tests/test_shutdown.c` y tabla de la sección 8 | Aprobado |
 | 45 corridas | Pendiente | 45 corridas verificadas | No ejecutado | Pendiente | Pendiente |
 
 ## 6. Revisiones pendientes
@@ -127,13 +128,54 @@ no sustituye la sincronización del programa.
 - Confirmar la cobertura completa de los escenarios T01-T17.
 - Ejecutar y documentar una reconstrucción desde un entorno limpio,
   según T17.
-- Incorporar las evidencias de cierre y estrés que correspondan
-  a los demás issues del equipo.
+- Incorporar la evidencia de estrés y sanitizers de P2-14.
 
 Las cifras anteriores describen ejecuciones observadas y no implican
 que todos los escenarios de la matriz estén completos.
 
-### Propagación de errores y reconstrucción limpia
+## 8. Intercalados y carreras de cierre — P2-13
+
+El objetivo `make test-shutdown`, incluido por `make test`, usa procesos
+independientes y sincronización explícita con tuberías y condiciones compartidas.
+Las esperas por estado pertenecen únicamente a la instrumentación de prueba: toman
+el mutex y esperan `state_changed`; no agregan sondeo al protocolo de producción.
+
+| Intercalado buscado | Cómo se fuerza | Evidencia automática |
+|---|---|---|
+| Buffer lleno y productor bloqueado | Capacidad 1; el productor publica el primer mensaje y avisa por tubería antes de intentar el segundo | En `OPEN`: ocupación y aceptados valen 1 y el productor sigue activo. En `CLOSING`, el segundo `put` retorna `SOA_CLOSED`; el consumidor drena el único mensaje y el resumen conserva `accepted=extracted=1`, `pending=0`. |
+| Productor en pausa | `test_close_interrupts_producer_pause` usa una pausa sorteada larga y el caso C solicita un cierre real antes de la primera inserción | El productor despierta por cierre, el resumen conserva `accepted=extracted=pending=0` y los CSV funcionales pasan `scripts/verificar_csv.py`. |
+| Consumidor procesando con buffer vacío | El consumidor extrae el único mensaje, confirma ocupación 0 y avisa antes de iniciar procesamiento privado | El finalizador real espera `LEAVE`; el resumen conserva `accepted=extracted=1`, `pending=0`, demostrando que no confundió buffer vacío con consumidor retirado. |
+| Consumidor esperando y cierre sin trabajadores | Un consumidor bloquea en `take`; otro caso cierra una instancia recién creada | El consumidor recibe `SOA_CLOSED`; ambos cierres terminan, retiran el nombre y producen snapshot válido. |
+| Rechazo sin consumidor y recuperación | Se deja un mensaje pendiente sin consumidores y se intenta cerrar; después se registra uno | Primer resultado `SOA_NO_CONSUMER` con handle válido y estado `OPEN`; el consumidor drena y el cierre posterior conserva 1/1/0. |
+| Conexión aún no registrada | Una conexión abre antes del corte y espera una orden por tubería; un consumidor mantiene `CLOSING` observable | El registro tardío retorna `SOA_CLOSED`; el finalizador espera que ambas conexiones liberen sus bloqueos de vida antes de destruir. |
+| Dos finalizadores | El conductor reclama el cierre mientras un consumidor impide completar el drenaje; entonces se lanza el segundo | Solo el conductor obtiene `SOA_OK`; el segundo recibe `SOA_CLOSED` o `SOA_FINISHER_EXISTS`, sin segunda destrucción. |
+| Reutilización del nombre | Se termina una instancia vacía, se comprueba `SOA_NOT_FOUND` y se crea otra con el mismo nombre | La segunda instancia se crea y termina correctamente. |
+
+Los casos revisan estados y contadores solo bajo el mutex compartido. Los `waitpid`
+confirman retirada normal de cada proceso antes de considerar aprobado el caso; el
+finalizador no destruye las primitivas mientras quede una conexión o participante.
+La comprobación del resumen se complementa con
+`tests/test_verificador_cierre.py`, que valida conservación y rechazo de resúmenes
+con pérdidas, extracciones extra, pendientes o cierre temporalmente inválido.
+
+Comandos reproducibles:
+
+```bash
+make clean
+make -j4 test-shutdown
+make test-python
+make -j4 test
+```
+
+Ejecución observada el 31 de octubre de 2026:
+
+- `test-shutdown` aprobó desde una compilación limpia y en 50 repeticiones
+  consecutivas.
+- La suite integrada aprobó: 71 pruebas Python, 264 casos del parser y los
+  escenarios C/integración, con código final 0.
+- `git diff --check` no reportó errores de formato.
+
+## 9. Propagación de errores y reconstrucción limpia
 
 **Propagación de errores:**
 
