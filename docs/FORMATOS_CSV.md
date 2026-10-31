@@ -15,7 +15,7 @@
 
 ## 2. Formato del CSV de eventos (v1)
 
-**Codificación:** UTF-8, separador coma, encabezado obligatorio, una fila por evento, final de línea LF, números decimales sin separador de miles, sin comillas para campos definidos en este esquema (todos controlados por el programa). Los archivos se abren por cada trabajador y se cierran antes de su retirada definitiva. No escribir valores `NaN`, `inf` ni negativos en campos enteros.
+**Codificación:** UTF-8, separador coma, encabezado obligatorio, una fila por evento, final de línea LF, números decimales sin separador de miles, sin comillas para campos definidos en este esquema (todos controlados por el programa). Los archivos se abren por cada trabajador. Antes de retirarse se escriben y entregan los eventos de operación; `soa_participant_unregister` captura `LEAVE` en memoria privada y finaliza las métricas compartidas. Después de retornar, el proceso escribe `LEAVE`, vacía y cierra el archivo sin volver a acceder a la instancia. No escribir valores `NaN`, `inf` ni negativos en campos enteros.
 
 **Cabecera exacta, en este orden:**
 
@@ -55,7 +55,7 @@ Las dos filas de mensajes muestran la **forma del formato**, no un payload váli
 ### Eventos de ciclo de vida y cierre
 
 - `JOIN`: registro exitoso; ocurre bajo `OPEN` y consume un ID histórico.
-- `LEAVE`: retirada confirmada; si el consumidor retiró un mensaje, sucede después de completar su procesamiento.
+- `LEAVE`: retirada confirmada; si el consumidor retiró un mensaje, sucede después de completar su procesamiento. El resumen del finalizador usa los acumuladores compartidos ya finalizados y no espera la escritura del evento privado; el verificador de logs se ejecuta después de terminar los trabajadores.
 - `STATE_CHANGE`: transición `OPEN → CLOSING → CLOSED`. **Decisión pendiente**: no debe inventarse una fila de trabajador para un evento originado por `finisher`. Se recomienda registrar estos eventos en un archivo de auditoría separado del finalizador (`summary` y/o `lifecycle.csv`), conservando timestamp y estado, y ampliar si hace falta el contrato mediante un tipo de evento dedicado. `soa_event_t` contiene rol de trabajador: un registro `finisher` en la misma estructura requiere aprobación del equipo.
 - Una inserción rechazada durante cierre **no genera** `ENQUEUE`, y no aumenta aceptados. Las salidas con `SOA_CLOSED` quedan auditadas con eventos de retirada y/o auditoría de cierre.
 

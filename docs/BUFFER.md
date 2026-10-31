@@ -2,84 +2,65 @@
 
 Responsable Adrián, revisor Edwin
 
-## Implementación
+## Operaciones
 
-`src/common/buffer.c` implementa las funciones existentes `soa_buffer_put` y
-`soa_buffer_take` sin cambiar sus nombres ni firmas públicas
+`soa_buffer_put` inserta y `soa_buffer_take` extrae mensajes FIFO
+Las funciones conservan sus nombres y firmas públicas
 
-Cada operación toma el mutex compartido y lo libera antes de retornar
-Las condiciones `not_full` y `not_empty` se esperan dentro de ciclos que comprueban
-el estado y la ocupación, `pthread_cond_wait` libera el mutex mientras espera y lo
-recupera antes de continuar
+Ambas toman el mutex compartido y lo liberan antes de retornar
+Las esperas por espacio y datos usan condiciones dentro de ciclos
+Mientras esperan liberan el mutex, al despertar vuelven a comprobar el predicado
 
-La inserción solo avanza en `OPEN`, asigna secuencia global y tiempo monotónico bajo
-el mismo mutex que protege el corte a `CLOSING`
-La extracción mantiene FIFO y permite drenar durante `CLOSING`
+La inserción solo avanza en `OPEN`, asigna secuencia global y tiempo monotónico
+bajo el mismo mutex que protege el cambio a `CLOSING`
+La extracción permite drenar durante `CLOSING`
 En `CLOSED` se rechazan ambas operaciones
-Los índices avanzan con módulo de la capacidad y los contadores se comprueban antes
-de incrementarlos para evitar overflow
-Las secuencias siguientes deben inicializarse en uno, al alcanzar `UINT64_MAX` se
-rechaza la operación para no desbordar el siguiente incremento
+Los índices avanzan con módulo de la capacidad
+Los contadores y las secuencias se comprueban antes de incrementarse
+Las secuencias empiezan en uno y se rechaza el incremento que desbordaría su rango
 
-Los eventos son copias privadas completas con rol, participante, tipo, estado,
-tiempo y ocupación posterior a la operación
-La inserción copia el borrador e ignora sus campos de secuencia global y tiempo,
-también pone `reserved` en cero
-La extracción captura `dequeue_seq` y conserva la identidad y la carga útil
-La escritura de CSV y el procesamiento pertenecen al llamador después del retorno
-El buffer no genera pausas ni realiza E/S de archivos
-El consumidor debe permanecer registrado durante su procesamiento posterior
+Los eventos son copias privadas con rol, participante, tipo, estado, tiempo,
+ocupación posterior a la operación y mensaje completo
+El borrador conserva su identidad y carga útil, la inserción asigna su secuencia
+global y tiempo y pone `reserved` en cero
+La extracción captura también `dequeue_seq`
 
 Cada inserción avisa a `not_empty` y cada extracción avisa a `not_full`
-Al vaciar el buffer se notifica también `state_changed` para que el finalizador
-pueda volver a comprobar su predicado de drenaje
-El finalizador deberá cambiar el estado y despertar las tres condiciones bajo el
-mismo mutex, esas operaciones pertenecen a P2-10
+Al vaciar el buffer se notifica `state_changed` para que el finalizador compruebe
+su predicado de drenaje
+El finalizador debe cambiar el estado y despertar las tres condiciones bajo el
+mismo mutex, esa coordinación pertenece a P2-10
+
+Las pausas, el procesamiento y la escritura de archivos ocurren fuera del buffer
+El consumidor debe permanecer registrado hasta completar su procesamiento
 
 ## Retornos
 
 | Código | Significado |
 | --- | --- |
 | `SOA_OK` | Operación realizada y salidas disponibles |
-| `SOA_CLOSED` | Inserción después del corte o extracción sin posibilidad de datos, salidas intactas |
-| `SOA_INVALID_ARGUMENT` | Punteros nulos, rol incorrecto, participante no registrado, ID fuera de rango o borrador sin identidad válida |
-| `SOA_INCOMPATIBLE_INSTANCE` | Capacidad, índices, ocupación, estado o secuencias iniciales incompatibles |
-| `SOA_OVERFLOW` | Secuencia, contador o marca temporal fuera de rango, sin modificar el buffer |
-| `SOA_SYSTEM_ERROR` | Fallo del reloj o de una primitiva POSIX, errno permite consultar la causa |
+| `SOA_CLOSED` | El estado impide la operación, salidas intactas |
+| `SOA_INVALID_ARGUMENT` | Punteros, identidad o handle inválidos |
+| `SOA_INCOMPATIBLE_INSTANCE` | Estado interno incompatible con el buffer |
+| `SOA_OVERFLOW` | Secuencia, contador o tiempo fuera de rango |
+| `SOA_SYSTEM_ERROR` | Fallo del reloj o de una primitiva POSIX, errno indica la causa |
 
-Los fallos anteriores a la modificación conservan mensajes y eventos de salida
-Si una notificación o el desbloqueo falla después de realizar la operación, los
-datos ya fueron aceptados o extraídos y el evento ya contiene esa operación
-No se debe reintentar ciegamente porque se podría duplicar una inserción
-Estos fallos se reportan como errores del sistema, no se promete recuperación ante
-primitivas corruptas o procesos que mueren dentro de una sección crítica
+Los errores anteriores a la modificación dejan intactos el buffer y las salidas
+Si una notificación o el desbloqueo falla después de la operación, los datos ya
+fueron aceptados o extraídos y el evento refleja ese resultado
+No se debe reintentar sin comprobarlo porque se podría duplicar una inserción
+No se promete recuperación ante primitivas corruptas o procesos que mueren dentro
+de la región crítica
 
-## Integración pendiente con memoria y participantes
+## Integración
 
-En esta rama no hay implementación de P2-05 ni una representación interna existente
-de `soa_instance_t`, el issue de P2-05 está abierto
-Por eso `src/common/instance_internal.h` define únicamente el almacenamiento que
-necesita el buffer y los campos privados de rol, ID y registro
-No constituye una ABI final ni reemplaza el diseño aprobado de publicación y admisión
+Se utiliza la representación de P2-05 y P2-07 sin cambiar su ABI
+El handle debe conservar descriptor, reserva de lectura y registro con el rol correcto
+La apertura valida publicación y ABI, el registro controla admisión e IDs históricos
+El buffer mantiene la reserva de vida y usa el mutex y las condiciones de la instancia
 
-Antes de integrar con P2-05 y P2-07 se requiere revisión de Edwin para unificar esta
-cabecera con su representación de memoria
-
-- Incorporar cabecera de publicación, tamaño y versión, participantes y métricas según P2-01
-- Calcular el mapeo con `offsetof` y la capacidad, comprobando overflow
-- Inicializar mutex y condiciones con `PTHREAD_PROCESS_SHARED`
-- Configurar las condiciones con `CLOCK_MONOTONIC`
-- Inicializar estado en `OPEN`, índices y contadores en cero y secuencias en uno
-- Entregar handles registrados con el rol y el ID correctos
-- Mantener la reserva de vida desde antes del mapeo hasta después del último uso
-- No destruir ni desmontar el segmento mientras una operación pueda usarlo
-
-No se implementan aquí creator, apertura, registro ni finisher
-El indicador privado de registro no sustituye la admisión sincronizada de P2-07
-Las validaciones del buffer tampoco sustituyen la validación de ABI antes de tocar
-el mutex ni el bloqueo de descriptor acordado en P2-01
-La instrumentación acumulada de esperas por participante se integra con P2-08,
-este módulo entrega los eventos exigidos por el contrato de P2-03
+P2-08 incorpora las métricas acumuladas de esperas y la escritura de eventos
+P2-09 incorpora los trabajadores completos y P2-10 el cierre de la instancia
 
 ## Pruebas
 
@@ -89,52 +70,42 @@ make -j4 test
 make test-buffer
 ```
 
-`tests/buffer_test.c` crea objetos POSIX exclusivos y los desvincula inmediatamente
-para que no queden nombres después de una prueba fallida
-Los procesos hijos vuelven a mapear el objeto en otra dirección y usan las
-funciones públicas del buffer, las primitivas son compartidas entre procesos
-El fixture inicializa el segmento y handles privados porque los módulos de memoria
-y registro todavía no están disponibles
-No se presenta como una ejecución completa de los cuatro programas del proyecto
+`buffer_test.c` usa memoria POSIX y procesos con mapeos en direcciones distintas
+Los datos de prueba controlan los límites y fallos internos sin depender del registro
+Comprueba capacidades 1, 2, 8 y 1024, vuelta de índices, eventos, bloqueo por lleno
+y vacío, notificaciones sin cambio del predicado, cierre y overflow
+Los pipes confirman el intento de operación y transmiten el resultado
+Los plazos de poll y las alarmas solo detectan estancamiento en pruebas
 
-| Caso | Comprobación |
+`buffer_integration.sh` usa creator real y procesos independientes registrados
+Cada proceso usa las funciones públicas y escribe sus eventos fuera del mutex
+El verificador comprueba identidad, contenido, FIFO y registro con los CSV generados
+La integración también comprueba drenaje y rechazo de operaciones sin registro
+
+| Integración | Mensajes verificados |
 | --- | --- |
-| Capacidades 1, 2, 8 y 1024 | FIFO, índices circulares, ocupación y conservación |
-| Inserción y extracción intercaladas | Reutilización de posiciones e identidad estable |
-| Eventos | Identidad, carga, tiempos, secuencias, rol, estado y ocupación |
-| Lleno y vacío | Sin resultado prematuro, reanudación al aparecer espacio o datos |
-| Notificación sin cambiar el predicado | El trabajador continúa esperando |
-| Cierre con productor o consumidor esperando | Despertar y retorno sin nuevas inserciones |
-| Cierre con pendientes | Drenaje y retorno de cierre después de vaciar |
-| Cerrado con pendientes | Ninguna extracción en `CLOSED` |
-| Cuatro productores y cuatro consumidores | 400 mensajes con capacidad 1 y 8, cada identidad exactamente una vez |
-| Errores | Punteros, rol, registro, estado interno y overflow sin modificar datos |
+| Capacidad 8 con un productor y un consumidor | 1000 |
+| Capacidad 1 con cuatro productores y cuatro consumidores | 4000 |
+| Capacidad 8 con cuatro productores y cuatro consumidores | 4000 |
 
-Los pipes confirman que el hijo está por llamar a la operación y transmiten su
-resultado, `poll` comprueba ausencia de respuesta y progreso con plazos acotados
-Las alarmas solo detectan estancamiento en pruebas, no coordinan el buffer
-No hay sondeo ni pausas artificiales en las operaciones de producción
-El segmento de pruebas reserva al final un vector de identidades independiente de
-las celdas del buffer para detectar duplicados entre consumidores
-La carga conocida del fixture prueba integridad, no implementa el generador de
-payload de los trabajadores que corresponde a P2-09
-La integración de las aplicaciones reales y de sus CSV con el verificador queda
-pendiente de P2-05, P2-07, P2-08, P2-09 y P2-10
+La carga conocida y el escritor CSV son auxiliares de prueba
+No sustituyen los trabajadores ni el módulo de logs
+La instancia de integración se libera cuando todos sus procesos terminaron,
+con bloqueo exclusivo del descriptor antes de destruir las primitivas
+Los archivos temporales se eliminan al terminar
 
-La implementación y las pruebas se realizaron con asistencia de Codex
-La revisión de Edwin y el PR integrado siguen pendientes
-
-## Validación obtenida
-
-Pasaron la reconstrucción limpia con `make -j4 test`, la suite del buffer,
-smoke y las 30 pruebas Python existentes
-También pasó la suite del buffer instrumentada con ASan y UBSan
+Pasaron la reconstrucción limpia, las pruebas del buffer, la integración,
+los argumentos, memoria, registro, smoke y las 30 pruebas Python
+También pasó la integración instrumentada con ASan y UBSan
 
 ```bash
 make clean
 ASAN_OPTIONS=detect_leaks=0 make -j4 CFLAGS='-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie' LDFLAGS='-fsanitize=address,undefined -no-pie' test-buffer
 ```
 
-Se desactivó la detección de fugas por la limitación de LeakSanitizer bajo ptrace
-ya observada en este entorno, no se afirma validación de fugas ni ausencia de carreras
-Al terminar se reconstruyó con los flags normales y se ejecutó nuevamente la suite
+La detección de fugas se desactivó por la limitación de LeakSanitizer bajo ptrace
+No se afirma comprobación de fugas ni ausencia de carreras
+Después se restauró la compilación normal
+
+La implementación y las pruebas se realizaron con asistencia de Codex
+La revisión de Edwin y el PR integrado siguen pendientes

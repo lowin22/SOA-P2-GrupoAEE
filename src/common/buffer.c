@@ -18,7 +18,7 @@ static soa_status_t monotonic_now(uint64_t *out)
     return SOA_OK;
 }
 
-static soa_status_t unlock_buffer(shared_buffer_t *shared, soa_status_t status)
+static soa_status_t unlock_buffer(soa_shared_instance_t *shared, soa_status_t status)
 {
     int rc = pthread_mutex_unlock(&shared->mutex);
     if (rc != 0) {
@@ -30,12 +30,13 @@ static soa_status_t unlock_buffer(shared_buffer_t *shared, soa_status_t status)
 
 static soa_status_t lock_buffer(soa_instance_t *instance, soa_role_t role)
 {
-    if (instance == NULL || instance->shared == NULL || !instance->registered
-        || instance->role != role || instance->id < SOA_MIN_PARTICIPANT_ID
-        || instance->id > SOA_MAX_PARTICIPANT_ID) {
+    if (instance == NULL || instance->shared == NULL || instance->fd < 0
+        || !instance->read_lock_held || !instance->registered
+        || instance->role != role || instance->participant_id < SOA_MIN_PARTICIPANT_ID
+        || instance->participant_id > SOA_MAX_PARTICIPANT_ID) {
         return SOA_INVALID_ARGUMENT;
     }
-    shared_buffer_t *shared = instance->shared;
+    soa_shared_instance_t *shared = instance->shared;
     int rc = pthread_mutex_lock(&shared->mutex);
     if (rc != 0) {
         errno = rc;
@@ -55,14 +56,14 @@ soa_status_t soa_buffer_put(soa_instance_t *instance,
                           const soa_message_t *draft, soa_event_t *event)
 {
     if (draft == NULL || event == NULL || instance == NULL
-        || draft->producer_id != instance->id || draft->sequence == 0) {
+        || draft->producer_id != instance->participant_id || draft->sequence == 0) {
         return SOA_INVALID_ARGUMENT;
     }
     soa_status_t status = lock_buffer(instance, SOA_ROLE_PRODUCER);
     if (status != SOA_OK) {
         return status;
     }
-    shared_buffer_t *shared = instance->shared;
+    soa_shared_instance_t *shared = instance->shared;
     while (shared->state == SOA_STATE_OPEN && shared->occupancy == shared->capacity) {
         int rc = pthread_cond_wait(&shared->not_full, &shared->mutex);
         if (rc != 0) {
@@ -91,7 +92,7 @@ soa_status_t soa_buffer_put(soa_instance_t *instance,
     ++shared->occupancy;
     ++shared->accepted_count;
     *event = (soa_event_t){
-        .role = instance->role, .participant_id = instance->id,
+        .role = instance->role, .participant_id = instance->participant_id,
         .kind = SOA_EVENT_ENQUEUE, .state = shared->state,
         .timestamp_ns = now, .occupancy = shared->occupancy, .message = message
     };
@@ -113,7 +114,7 @@ soa_status_t soa_buffer_take(soa_instance_t *instance, soa_message_t *message,
     if (status != SOA_OK) {
         return status;
     }
-    shared_buffer_t *shared = instance->shared;
+    soa_shared_instance_t *shared = instance->shared;
     while (shared->state == SOA_STATE_OPEN && shared->occupancy == 0) {
         int rc = pthread_cond_wait(&shared->not_empty, &shared->mutex);
         if (rc != 0) {
@@ -139,7 +140,7 @@ soa_status_t soa_buffer_take(soa_instance_t *instance, soa_message_t *message,
     ++shared->extracted_count;
     shared->last_dequeue_ns = now;
     *event = (soa_event_t){
-        .role = instance->role, .participant_id = instance->id,
+        .role = instance->role, .participant_id = instance->participant_id,
         .kind = SOA_EVENT_DEQUEUE, .state = shared->state,
         .timestamp_ns = now, .dequeue_seq = shared->next_dequeue_seq++,
         .occupancy = shared->occupancy, .message = *message

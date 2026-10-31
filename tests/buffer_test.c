@@ -21,7 +21,7 @@
 typedef struct {
     int fd;
     size_t size;
-    shared_buffer_t *shared;
+    soa_shared_instance_t *shared;
 } fixture_t;
 
 static fixture_t create_fixture(uint32_t capacity)
@@ -29,9 +29,8 @@ static fixture_t create_fixture(uint32_t capacity)
     static unsigned serial;
     char name[80];
     snprintf(name, sizeof name, "/buffer_test_%ld_%u", (long)getpid(), serial++);
-    fixture_t fixture = {.size = offsetof(shared_buffer_t, messages)
-                                   + capacity * sizeof(soa_message_t)
-                                   + 400 * sizeof(uint32_t)};
+    fixture_t fixture = {.size = offsetof(soa_shared_instance_t, messages)
+                                   + capacity * sizeof(soa_message_t)};
     fixture.fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR, 0600);
     CHECK(fixture.fd >= 0);
     CHECK(shm_unlink(name) == 0);
@@ -69,9 +68,16 @@ static void destroy_fixture(fixture_t *fixture)
     CHECK(close(fixture->fd) == 0);
 }
 
-static soa_instance_t handle(shared_buffer_t *shared, soa_role_t role, uint32_t id)
+static soa_instance_t handle(soa_shared_instance_t *shared, soa_role_t role, uint32_t id)
 {
-    return (soa_instance_t){.shared = shared, .role = role, .id = id, .registered = true};
+    return (soa_instance_t){
+        .shared = shared,
+        .role = role,
+        .participant_id = id,
+        .registered = true,
+        .fd = 0,
+        .read_lock_held = true
+    };
 }
 
 static soa_message_t draft(uint32_t id, uint64_t sequence)
@@ -83,7 +89,7 @@ static soa_message_t draft(uint32_t id, uint64_t sequence)
     return message;
 }
 
-static void conservation(shared_buffer_t *shared)
+static void conservation(soa_shared_instance_t *shared)
 {
     CHECK(shared->occupancy <= shared->capacity);
     CHECK(shared->accepted_count == shared->extracted_count + shared->occupancy);
@@ -159,7 +165,7 @@ static void test_fifo(uint32_t capacity)
     destroy_fixture(&f);
 }
 
-static void close_buffer(shared_buffer_t *shared)
+static void close_buffer(soa_shared_instance_t *shared)
 {
     CHECK(pthread_mutex_lock(&shared->mutex) == 0);
     shared->state = SOA_STATE_CLOSING;
@@ -171,7 +177,7 @@ static void close_buffer(shared_buffer_t *shared)
 
 static void remap_child(fixture_t *fixture)
 {
-    shared_buffer_t *mapped = mmap(NULL, fixture->size, PROT_READ | PROT_WRITE,
+    soa_shared_instance_t *mapped = mmap(NULL, fixture->size, PROT_READ | PROT_WRITE,
                                    MAP_SHARED, fixture->fd, 0);
     CHECK(mapped != MAP_FAILED && mapped != fixture->shared);
     CHECK(munmap(fixture->shared, fixture->size) == 0);
@@ -257,6 +263,12 @@ static void test_errors(void)
     CHECK(soa_buffer_put(&c, &message, &event) == SOA_INVALID_ARGUMENT);
     CHECK(soa_buffer_put(&p, NULL, &event) == SOA_INVALID_ARGUMENT);
     CHECK(soa_buffer_take(&c, &message, NULL) == SOA_INVALID_ARGUMENT);
+    p.fd = -1;
+    CHECK(soa_buffer_put(&p, &message, &event) == SOA_INVALID_ARGUMENT);
+    p.fd = 0;
+    p.read_lock_held = false;
+    CHECK(soa_buffer_put(&p, &message, &event) == SOA_INVALID_ARGUMENT);
+    p.read_lock_held = true;
     p.registered = false;
     CHECK(soa_buffer_put(&p, &message, &event) == SOA_INVALID_ARGUMENT);
     p.registered = true;
@@ -293,56 +305,6 @@ static void test_errors(void)
     destroy_fixture(&f);
 }
 
-static void test_concurrent(uint32_t capacity)
-{
-    fixture_t f = create_fixture(capacity);
-    pid_t workers[8];
-    for (unsigned i = 0; i < 8; ++i) {
-        workers[i] = fork();
-        CHECK(workers[i] >= 0);
-        if (workers[i] == 0) {
-            remap_child(&f);
-            bool producing = i < 4;
-            soa_instance_t worker = handle(f.shared,
-                producing ? SOA_ROLE_PRODUCER : SOA_ROLE_CONSUMER, i % 4 + 1);
-            for (uint64_t sequence = 1; sequence <= 100; ++sequence) {
-                soa_message_t message = draft(worker.id, sequence);
-                soa_event_t event;
-                if (producing) {
-                    CHECK(soa_buffer_put(&worker, &message, &event) == SOA_OK);
-                } else {
-                    CHECK(soa_buffer_take(&worker, &message, &event) == SOA_OK);
-                    CHECK(event.dequeue_seq == message.enqueue_seq);
-                    CHECK(message.producer_id >= 1 && message.producer_id <= 4);
-                    CHECK(message.sequence >= 1 && message.sequence <= 100);
-                    check_message(&message);
-                    uint32_t *seen = (uint32_t *)((unsigned char *)f.shared
-                                                 + f.size - 400 * sizeof(uint32_t));
-                    CHECK(pthread_mutex_lock(&f.shared->mutex) == 0);
-                    size_t index = (message.producer_id - 1) * 100 + message.sequence - 1;
-                    CHECK(++seen[index] == 1);
-                    CHECK(pthread_mutex_unlock(&f.shared->mutex) == 0);
-                }
-            }
-            _exit(0);
-        }
-    }
-    for (unsigned i = 0; i < 8; ++i) {
-        int status;
-        CHECK(waitpid(workers[i], &status, 0) == workers[i]);
-        CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    }
-    conservation(f.shared);
-    CHECK(f.shared->occupancy == 0 && f.shared->accepted_count == 400);
-    CHECK(f.shared->extracted_count == 400);
-    uint32_t *seen = (uint32_t *)((unsigned char *)f.shared
-                                 + f.size - 400 * sizeof(uint32_t));
-    for (size_t i = 0; i < 400; ++i) {
-        CHECK(seen[i] == 1);
-    }
-    destroy_fixture(&f);
-}
-
 int main(void)
 {
     alarm(30);
@@ -355,8 +317,6 @@ int main(void)
     test_wait(true, true);
     test_wait(false, true);
     test_errors();
-    test_concurrent(1);
-    test_concurrent(8);
     puts("OK buffer FIFO bloqueo entre procesos cierre y conservacion");
     return EXIT_SUCCESS;
 }
