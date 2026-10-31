@@ -457,6 +457,68 @@ def cargar_manifiesto(ruta):
     return archivos
 
 
+
+def verificar_resumen_cierre(ruta, aceptados, extraidos):
+    """Contrasta el resumen del finalizador con los eventos CSV."""
+    import csv
+
+    with ruta.open(newline="", encoding="utf-8") as archivo:
+        lector = csv.DictReader(archivo)
+        filas = list(lector)
+
+    campos = {
+        "schema_version", "instance_name", "accepted",
+        "extracted", "pending", "closing_start_ns",
+        "release_complete_ns",
+    }
+
+    if not lector.fieldnames or not campos.issubset(lector.fieldnames):
+        raise ValueError("Resumen de cierre incompleto")
+
+    if len(filas) != 1:
+        raise ValueError("El resumen debe contener una sola fila")
+
+    fila = filas[0]
+
+    if fila["schema_version"] != "1":
+        raise ValueError("Versión del resumen incorrecta")
+
+    if not fila["instance_name"].startswith("/"):
+        raise ValueError("Nombre de instancia inválido en resumen")
+
+    valores = {}
+
+    for campo in (
+        "accepted", "extracted", "pending",
+        "closing_start_ns", "release_complete_ns"
+    ):
+        valores[campo] = validar_entero(
+            fila[campo], campo, ruta, 2
+        )
+
+    errores = []
+
+    if valores["accepted"] != aceptados:
+        errores.append("accepted no coincide con los CSV")
+
+    if valores["extracted"] != extraidos:
+        errores.append("extracted no coincide con los CSV")
+
+    if valores["accepted"] != valores["extracted"]:
+        errores.append("El cierre no conserva todos los mensajes")
+
+    if valores["pending"] != 0:
+        errores.append("El resumen presenta mensajes pendientes")
+
+    if valores["closing_start_ns"] == 0:
+        errores.append("Falta la marca de inicio del cierre")
+
+    if valores["release_complete_ns"] < valores["closing_start_ns"]:
+        errores.append("Liberación anterior al inicio del cierre")
+
+    return errores
+
+
 def main():
     """Ejecuta las verificaciones seleccionadas desde la terminal."""
     parser = argparse.ArgumentParser(
@@ -477,6 +539,11 @@ def main():
         "--manifiesto",
         type=Path,
         help="JSON auxiliar que declara los CSV esperados de la instancia",
+    )
+    parser.add_argument(
+        "--summary",
+        type=Path,
+        help="CSV del resumen final para comprobar conservación y cierre",
     )
     args = parser.parse_args()
 
@@ -508,6 +575,13 @@ def main():
         # Modo provisional: no es una auditoría integral del cierre.
         if args.validar_ciclo:
             errores.extend(verificar_ciclo_vida(registros))
+
+        if args.summary is not None:
+            errores.extend(
+                verificar_resumen_cierre(
+                    args.summary, aceptados, extraidos
+                )
+            )
 
         print(f"Mensajes aceptados: {aceptados}")
         print(f"Mensajes extraídos: {extraidos}")
