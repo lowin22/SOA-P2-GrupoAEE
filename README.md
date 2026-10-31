@@ -6,6 +6,16 @@ Proyecto de Sistemas Operativos Avanzados, II semestre de 2026. Se implementará
 cuatro programas C17 sobre GNU/Linux con memoria compartida POSIX: `creator`,
 `producer`, `consumer` y `finisher`.
 
+**Estado:** están implementados argumentos (P2-04), creación y publicación de
+memoria compartida (P2-05), buffer FIFO y sincronización (P2-06), conexiones,
+registro y retirada (P2-07), CSV y métricas (P2-08), trabajadores y pausas (P2-09),
+y cierre seguro con resumen privado (P2-10).
+
+El módulo de buffer se comprueba con `make test-buffer`: incluye operaciones FIFO,
+condiciones compartidas y pruebas entre procesos. La integración con memoria y
+registro usa instancias y participantes reales; los CSV de 1000 y 4000 mensajes
+pasan el verificador. El [contrato del buffer](docs/BUFFER.md) detalla bloqueos,
+retornos y pruebas.
 
 ## Integrantes
 
@@ -33,8 +43,8 @@ make clean
 Se compila con `-std=c17 -Wall -Wextra -Wpedantic -Werror -pthread`.
 Los binarios se generan en la raíz y los objetos/dependencias en `build/`.
 `make test` ejecuta la cobertura disponible de argumentos e infraestructura y falla
-ante incumplimientos. Incluye las suites de P2-04 y P2-05, pero no acredita todavía
-el buffer ni el cierre. `make help` describe los objetivos disponibles.
+ante incumplimientos. Incluye las suites de P2-04 a P2-10 disponibles en esta rama.
+`make help` describe los objetivos disponibles.
 
 ## Opciones de los ejecutables
 
@@ -45,8 +55,9 @@ el buffer ni el cierre. `make help` describe los objetivos disponibles.
 ./finisher --name /grupo_aee --summary results/resumen.csv
 ```
 
-`creator` ejecuta la operación de creación; los otros tres ejemplos solo alcanzan
-por ahora la validación sintáctica.
+`creator` crea la instancia y `finisher` coordina el cierre, libera los recursos y
+escribe el resumen. `producer` y `consumer` ejecutan el intercambio, las pausas y
+el registro CSV completo.
 Solo `--messages` es opcional: omitirla significa producir hasta cierre.
 Capacidad e IDs: 1..1024; media finita: 0..1000 ms; semilla: 0..`UINT64_MAX`;
 cuota explícita: 1..`UINT64_MAX`. Nombres: `/` y caracteres ASCII alfanuméricos,
@@ -67,6 +78,14 @@ completa operaciones y métricas antes de `soa_participant_unregister`; al
 confirmarse `LEAVE` ya no vuelve a tocar la instancia. El evento privado puede
 escribirse y cerrarse después sin bloquear al finalizador, cuyo resumen usa los
 acumuladores compartidos ya finalizados.
+
+El finalizador exige un consumidor activo cuando existen productores o mensajes
+pendientes. Tras reclamar el cierre impide registros nuevos, despierta las tres
+condiciones, espera buffer vacío y retirada de participantes, toma un snapshot
+privado, marca la publicación como retirada y destruye las primitivas bajo el
+bloqueo exclusivo del descriptor. Finalmente elimina el nombre POSIX, por lo que
+puede crearse otra instancia con el mismo nombre. El CSV se escribe únicamente
+después de liberar la memoria compartida.
 
 ## Docker
 
@@ -100,7 +119,7 @@ recompilar para no mezclar objetos de entornos distintos.
 |---|---|
 | `src/apps/` | Cuatro puntos de entrada independientes. |
 | `src/common/`, `include/soa/` | Módulos compartidos e interfaces. |
-| `tests/` | Parser público, argumentos CLI, aislamiento e infraestructura; futura suite del buffer. |
+| `tests/` | Parser, argumentos, memoria, registro, buffer, cierre e integración. |
 | `scripts/` | Futuro verificador y experimentos. |
 | `results/` | Instrucciones y futura evidencia seleccionada. |
 | `docs/` | Diseño, planificación y contratos. |
