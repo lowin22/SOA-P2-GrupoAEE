@@ -51,9 +51,7 @@ expect_error 'instancia' ./producer --name /args_valid --id 1 \
     --mean-ms 0 --seed 0 --log "$test_dir/new.csv"
 expect_error 'instancia' ./consumer --name /args_valid --id 1 \
     --mean-ms 2.5 --seed 1 --log "$test_dir/new.csv"
-
-# Finisher todavía no tiene activada su implementación.
-expect_error 'argumentos validos' ./finisher --name /args_valid --summary "$test_dir/new.csv"
+expect_error 'no existe la instancia' ./finisher --name /args_valid --summary "$test_dir/new.csv"
 
 for value in 0 1025 -1 8abc 18446744073709551616; do
     expect_error '--capacity' ./creator --name /args_invalid --capacity "$value"
@@ -76,4 +74,10 @@ expect_error 'no permitida' ./creator --name /args_invalid --log "$test_dir/new.
 
 cmp -- "$test_dir/existing.csv" "$test_dir/expected.csv"
 [[ ! -e "$test_dir/new.csv" ]]
+./finisher --name "$creator_name" --summary "$test_dir/summary.csv" \
+    > "$test_dir/stdout" 2> "$test_dir/stderr"
+[[ ! -s "$test_dir/stderr" ]]
+LC_ALL=C grep -Fq -- 'cerrada y liberada' "$test_dir/stdout"
+LC_ALL=C grep -Fq -- "1,$creator_name,1024,0,0,0," "$test_dir/summary.csv"
+[[ ! -e "/dev/shm/${creator_name#/}" ]]
 printf 'OK: argumentos CLI, diagnosticos y archivos de resultados intactos.\n'

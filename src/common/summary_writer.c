@@ -73,10 +73,11 @@ static int valid_summary(const soa_summary_t *s)
             return 0;
         }
     } else {
+        /* Los indicadores permiten declarar un par de latencias no disponible
+         * sin inventar valores; si existe medición, media y p95 son atómicos. */
         if (!s->has_first_worker_start ||
             !s->has_last_dequeue ||
-            !s->has_latency_mean ||
-            !s->has_latency_p95) {
+            s->has_latency_mean != s->has_latency_p95) {
             return 0;
         }
     }
