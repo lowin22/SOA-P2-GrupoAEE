@@ -24,6 +24,13 @@ class TestVerificadorCierre(unittest.TestCase):
             "accepted": "10",
             "extracted": "10",
             "pending": "0",
+            "capacity": "8",
+            "first_worker_start_ns": "100",
+            "last_dequeue_ns": "200",
+            "throughput_msg_s": "100000000",
+            "latency_mean_ns": "",
+            "latency_p95_ns": "",
+            "closing_duration_ns": "500",
             "closing_start_ns": "1000",
             "release_complete_ns": "1500",
         }
@@ -35,7 +42,7 @@ class TestVerificadorCierre(unittest.TestCase):
             "w", newline="", encoding="utf-8"
         ) as archivo:
             escritor = csv.DictWriter(
-                archivo, fieldnames=list(fila)
+                archivo, fieldnames=['schema_version', 'instance_name', 'capacity', 'accepted', 'extracted', 'pending', 'first_worker_start_ns', 'last_dequeue_ns', 'closing_start_ns', 'release_complete_ns', 'throughput_msg_s', 'latency_mean_ns', 'latency_p95_ns', 'closing_duration_ns']
             )
             escritor.writeheader()
             escritor.writerow(fila)

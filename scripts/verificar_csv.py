@@ -458,63 +458,230 @@ def cargar_manifiesto(ruta):
 
 
 
-def verificar_resumen_cierre(ruta, aceptados, extraidos):
-    """Contrasta el resumen del finalizador con los eventos CSV."""
-    import csv
+
+
+def verificar_corte_cierre(registros, closing_start_ns,
+                           release_complete_ns=None):
+    """Audita eventos respecto al corte y la liberación."""
+
+    errores = []
+
+    for fila in registros:
+        evento = fila["event"]
+        estado = fila["state"]
+        tiempo = int(fila["timestamp_ns"])
+
+        # JOIN: solamente antes del cierre y durante OPEN.
+        if evento == "JOIN":
+            if estado != "OPEN" or tiempo >= closing_start_ns:
+                errores.append(
+                    f"JOIN posterior al inicio del cierre o fuera de OPEN: "
+                    f"participante {fila['participant_id']}"
+                )
+
+        # ENQUEUE: ninguna inserción después del corte.
+        elif evento == "ENQUEUE":
+            insercion = int(fila["enqueue_time_ns"])
+
+            if estado != "OPEN":
+                errores.append(
+                    f"ENQUEUE registrado fuera de OPEN: "
+                    f"productor {fila['producer_id']}, "
+                    f"mensaje {fila['sequence']}"
+                )
+
+            if insercion >= closing_start_ns:
+                errores.append(
+                    f"ENQUEUE posterior al inicio del cierre: "
+                    f"productor {fila['producer_id']}, "
+                    f"mensaje {fila['sequence']}"
+                )
+
+        # DEQUEUE: permitido en OPEN y CLOSING.
+        elif evento == "DEQUEUE":
+            if estado not in {"OPEN", "CLOSING"}:
+                errores.append("DEQUEUE en estado no permitido")
+
+        # LEAVE: permitido antes o durante el cierre.
+        elif evento == "LEAVE":
+            if estado not in {"OPEN", "CLOSING"}:
+                errores.append("LEAVE en estado no permitido")
+
+        # Ningún evento debe registrarse después de la liberación.
+        if (release_complete_ns is not None
+                and tiempo > release_complete_ns):
+            errores.append(
+                f"{evento} posterior a la liberación de la instancia"
+            )
+
+    return errores
+
+
+
+def obtener_inicio_cierre(ruta):
+    """Obtiene la marca de cierre desde el resumen CSV."""
 
     with ruta.open(newline="", encoding="utf-8") as archivo:
         lector = csv.DictReader(archivo)
+
+        if lector.fieldnames is None:
+            raise ValueError("Resumen sin encabezado")
+
+        if "closing_start_ns" not in lector.fieldnames:
+            raise ValueError("Resumen sin closing_start_ns")
+
         filas = list(lector)
 
-    campos = {
-        "schema_version", "instance_name", "accepted",
-        "extracted", "pending", "closing_start_ns",
-        "release_complete_ns",
-    }
+    if len(filas) != 1:
+        raise ValueError("El resumen debe contener una sola fila")
 
-    if not lector.fieldnames or not campos.issubset(lector.fieldnames):
-        raise ValueError("Resumen de cierre incompleto")
+    return validar_entero(
+        filas[0]["closing_start_ns"],
+        "closing_start_ns", ruta, 2,
+        minimo=1, maximo=MASCARA_64
+    )
+
+
+
+
+def verificar_resumen_cierre(ruta, aceptados, extraidos):
+    """Valida las 14 columnas del resumen y su coherencia."""
+
+    import math
+
+    columnas = [
+        "schema_version", "instance_name", "capacity",
+        "accepted", "extracted", "pending",
+        "first_worker_start_ns", "last_dequeue_ns",
+        "closing_start_ns", "release_complete_ns",
+        "throughput_msg_s", "latency_mean_ns",
+        "latency_p95_ns", "closing_duration_ns",
+    ]
+
+    # Leer el encabezado y exigir exactamente una fila.
+    with ruta.open(newline="", encoding="utf-8") as archivo:
+        lector = csv.DictReader(archivo)
+
+        if lector.fieldnames != columnas:
+            raise ValueError("Encabezado del resumen incorrecto")
+
+        filas = list(lector)
 
     if len(filas) != 1:
         raise ValueError("El resumen debe contener una sola fila")
 
     fila = filas[0]
 
+    # Rechazar filas truncadas o con columnas adicionales.
+    if None in fila or any(valor is None for valor in fila.values()):
+        raise ValueError("Cantidad de columnas incorrecta")
+
     if fila["schema_version"] != "1":
         raise ValueError("Versión del resumen incorrecta")
 
-    if not fila["instance_name"].startswith("/"):
-        raise ValueError("Nombre de instancia inválido en resumen")
+    nombre = fila["instance_name"]
 
-    valores = {}
+    # La instancia debe tener un nombre POSIX sencillo.
+    if (not nombre.startswith("/")
+            or len(nombre) < 2
+            or "/" in nombre[1:]):
+        raise ValueError("Nombre de instancia inválido")
 
-    for campo in (
-        "accepted", "extracted", "pending",
-        "closing_start_ns", "release_complete_ns"
-    ):
-        valores[campo] = validar_entero(
-            fila[campo], campo, ruta, 2
+    def entero(campo, minimo=0):
+        # Leer un entero sin signo de 64 bits.
+        return validar_entero(
+            fila[campo], campo, ruta, 2,
+            minimo=minimo, maximo=MASCARA_64
         )
+
+    def entero_opcional(campo):
+        # Un campo vacío representa una medición no disponible.
+        if fila[campo] == "":
+            return None
+        return entero(campo)
+
+    def decimal_opcional(campo):
+        # Permitir ausencia de medición, pero no NaN ni infinito.
+        if fila[campo] == "":
+            return None
+        try:
+            valor = float(fila[campo])
+        except ValueError as error:
+            raise ValueError(
+                f"{campo} no es un número válido"
+            ) from error
+
+        if not math.isfinite(valor) or valor < 0:
+            raise ValueError(f"{campo} fuera de rango")
+
+        return valor
+
+    capacidad = entero("capacity", 1)
+    a = entero("accepted")
+    e = entero("extracted")
+    pendientes = entero("pending")
+
+    primero = entero_opcional("first_worker_start_ns")
+    ultimo = entero_opcional("last_dequeue_ns")
+    inicio_cierre = entero("closing_start_ns", 1)
+    fin_cierre = entero("release_complete_ns")
+
+    rendimiento = decimal_opcional("throughput_msg_s")
+    latencia = decimal_opcional("latency_mean_ns")
+    percentil = decimal_opcional("latency_p95_ns")
+    duracion = entero("closing_duration_ns")
 
     errores = []
 
-    if valores["accepted"] != aceptados:
+    if capacidad > 1024:
+        errores.append("capacity fuera de rango")
+
+    if a != aceptados:
         errores.append("accepted no coincide con los CSV")
 
-    if valores["extracted"] != extraidos:
+    if e != extraidos:
         errores.append("extracted no coincide con los CSV")
 
-    if valores["accepted"] != valores["extracted"]:
+    if a != e or e > a:
         errores.append("El cierre no conserva todos los mensajes")
 
-    if valores["pending"] != 0:
+    if pendientes != 0 or pendientes != a - e:
         errores.append("El resumen presenta mensajes pendientes")
 
-    if valores["closing_start_ns"] == 0:
-        errores.append("Falta la marca de inicio del cierre")
-
-    if valores["release_complete_ns"] < valores["closing_start_ns"]:
+    if fin_cierre < inicio_cierre:
         errores.append("Liberación anterior al inicio del cierre")
+    elif duracion != fin_cierre - inicio_cierre:
+        errores.append("closing_duration_ns incorrecta")
+
+    if primero is not None and primero > inicio_cierre:
+        errores.append("Inicio de trabajadores posterior al cierre")
+
+    if ultimo is not None:
+        if primero is None or ultimo < primero:
+            errores.append("Marcas temporales de extracción incorrectas")
+        if ultimo > fin_cierre:
+            errores.append("Extracción posterior a liberación")
+
+    if (latencia is None) != (percentil is None):
+        errores.append("Las dos métricas de latencia deben coexistir")
+
+    if e == 0:
+        if ultimo is not None or rendimiento is not None:
+            errores.append("Métricas incompatibles con cero extracciones")
+        if latencia is not None:
+            errores.append("Latencia sin mensajes extraídos")
+    else:
+        if primero is None or ultimo is None:
+            errores.append("Faltan marcas temporales de mensajes")
+        elif ultimo > primero:
+            esperado = e * 1_000_000_000 / (ultimo - primero)
+
+            if rendimiento is None or not math.isclose(
+                rendimiento, esperado, rel_tol=1e-8, abs_tol=1e-9
+            ):
+                errores.append("throughput_msg_s inconsistente")
+        elif rendimiento is not None:
+            errores.append("Rendimiento sin intervalo positivo")
 
     return errores
 
@@ -580,6 +747,30 @@ def main():
             errores.extend(
                 verificar_resumen_cierre(
                     args.summary, aceptados, extraidos
+                )
+            )
+
+            # Auditar incorporaciones e inserciones respecto al cierre.
+            inicio_cierre = obtener_inicio_cierre(args.summary)
+
+            # Leer la marca final de liberación del resumen.
+            with args.summary.open(
+                newline="", encoding="utf-8"
+            ) as archivo:
+                fila_resumen = next(csv.DictReader(archivo))
+
+            fin_cierre = validar_entero(
+                fila_resumen["release_complete_ns"],
+                "release_complete_ns",
+                args.summary,
+                2,
+                maximo=MASCARA_64
+            )
+
+            # Auditar eventos respecto al corte y la liberación.
+            errores.extend(
+                verificar_corte_cierre(
+                    registros, inicio_cierre, fin_cierre
                 )
             )
 

@@ -35,3 +35,44 @@ Esta comprobación requiere evidencia adicional del protocolo de cierre.
 ## Estado
 
 Implementación y pruebas funcionales realizadas. Pendiente de revisión final de los criterios del P2-11 y aprobación del equipo para su integración.
+
+
+## Validación final del P2-11
+
+Se amplió el verificador para auditar los registros respecto
+al inicio del cierre y la liberación de la instancia.
+
+### Comprobaciones realizadas
+
+- Identidad y contenido de mensajes.
+- Detección de duplicados, pérdidas y extracciones inválidas.
+- Continuidad de secuencias y orden FIFO.
+- Incorporación y retirada de participantes.
+- Inserciones permitidas únicamente durante OPEN.
+- Ausencia de incorporaciones posteriores al corte.
+- Extracciones y retiradas permitidas durante CLOSING.
+- Validación de las 14 columnas del resumen.
+- Conservación de mensajes y ausencia de pendientes.
+- Coherencia de marcas temporales, capacidad y rendimiento.
+
+### Evidencias
+
+- 78 pruebas Python aprobadas.
+- 264 casos del analizador de argumentos aprobados.
+- Corrida real con 800 mensajes aceptados y extraídos.
+- Rechazo de un resumen con duración alterada.
+- Rechazo de una inserción simulada posterior al cierre.
+- Código de salida 0 para registros válidos.
+- Código de salida distinto de cero para los errores inyectados.
+
+### Alcance de la comprobación
+
+La comparación de marcas temporales permite auditar los
+registros. La exclusión entre inserciones y transición
+OPEN a CLOSING depende del mutex del protocolo en C.
+
+Las pruebas verifican los escenarios ejecutados; no
+demuestran formalmente todas las intercalaciones posibles.
+
+La detección de archivos de participantes completamente
+ausentes requiere disponer de un manifiesto independiente.
