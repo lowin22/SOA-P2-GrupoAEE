@@ -7,15 +7,18 @@ override LDLIBS += -pthread
 PYTHON ?= python3
 PROGRAMS := creator producer consumer finisher
 COMMON_OBJECTS := build/common/app.o build/common/options.o \
-	build/common/instance.o build/common/participants.o
+	build/common/instance.o build/common/participants.o build/common/buffer.o
 APP_OBJECTS := $(PROGRAMS:%=build/apps/%.o)
-OBJECTS := $(COMMON_OBJECTS) $(APP_OBJECTS) build/tests/options_test.o
+OBJECTS := $(COMMON_OBJECTS) $(APP_OBJECTS) build/tests/options_test.o \
+	build/tests/buffer_test.o build/tests/buffer_integration.o
+BUFFER_TEST := build/tests/buffer_test
+BUFFER_INTEGRATION := build/tests/buffer_integration
 OPTIONS_TEST := build/tests/options_test
 INSTANCE_TEST := build/tests/test_instance
 PARTICIPANTS_TEST := build/tests/test_participants
 
 .PHONY: all clean smoke test test-options test-instance test-participants \
-	test-python help
+	test-buffer test-python help
 all: $(PROGRAMS)
 
 $(PROGRAMS): %: build/apps/%.o $(COMMON_OBJECTS)
@@ -54,10 +57,21 @@ $(PARTICIPANTS_TEST): tests/test_participants.c build/common/instance.o \
 test-participants: all $(PARTICIPANTS_TEST)
 	./$(PARTICIPANTS_TEST)
 
+$(BUFFER_TEST): build/tests/buffer_test.o build/common/buffer.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
+
+$(BUFFER_INTEGRATION): build/tests/buffer_integration.o build/common/buffer.o \
+		build/common/instance.o build/common/participants.o
+	$(CC) $(LDFLAGS) $^ $(LDLIBS) -o "$@"
+
+test-buffer: all $(BUFFER_TEST) $(BUFFER_INTEGRATION)
+	./$(BUFFER_TEST)
+	bash tests/buffer_integration.sh "$(PYTHON)"
+
 # Ejecuta las pruebas de argumentos y las pruebas Python disponibles
-test: test-options test-instance test-participants smoke test-python
+test: test-options test-instance test-participants test-buffer smoke test-python
 	@echo 'OK: pruebas disponibles ejecutadas.'
-	@echo 'PENDIENTE: pruebas funcionales C del buffer, concurrencia y cierre.'
+	@echo 'Pendiente integrar los trabajadores y el cierre completo de la instancia'
 
 test-python:
 	@if find tests -maxdepth 1 -type f -name 'test_*.py' -print -quit | grep -q .; then \
@@ -74,12 +88,13 @@ clean:
 	rm -f $(PROGRAMS)
 
 help:
-	@echo 'all: compilar los cuatro ejecutables disponibles'
+	@echo 'all: compilar los cuatro ejecutables iniciales'
 	@echo 'smoke: comprobar la interfaz inicial de la cáscara'
 	@echo 'test: ejecutar argumentos, memoria compartida, smoke y pruebas Python'
 	@echo 'test-options: comprobar el parser y los argumentos de los cuatro ejecutables'
 	@echo 'test-instance: comprobar memoria compartida y creator'
 	@echo 'test-participants: comprobar registro, IDs y retirada'
+	@echo 'test-buffer comprueba FIFO e integracion con memoria y registro'
 	@echo 'test-python: ejecutar los test_*.py disponibles sin necesitar los ejecutables C'
 	@echo 'clean: eliminar objetos y ejecutables generados'
 

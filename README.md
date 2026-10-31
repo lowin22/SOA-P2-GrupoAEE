@@ -6,9 +6,15 @@ Proyecto de Sistemas Operativos Avanzados, II semestre de 2026. Se implementará
 cuatro programas C17 sobre GNU/Linux con memoria compartida POSIX: `creator`,
 `producer`, `consumer` y `finisher`.
 
-**Estado:** están implementados argumentos (P2-04), creación y publicación de
-memoria compartida (P2-05), y conexiones, registro y retirada (P2-07). El
-intercambio en el buffer, los trabajadores completos y el cierre siguen pendientes.
+Están implementados los argumentos, la creación de memoria compartida y el registro
+El buffer está integrado con memoria y participantes
+Los trabajadores completos y el cierre de la instancia siguen pendientes
+
+El módulo de buffer de P2-06 está implementado y se comprueba con `make test-buffer`
+Incluye operaciones FIFO y pruebas entre procesos con condiciones compartidas
+La integración con P2-05 y P2-07 se verifica con creator real y procesos registrados
+Los CSV de 1000 y 4000 mensajes pasan el verificador del proyecto
+El [contrato del buffer](docs/BUFFER.md) describe bloqueos, retornos y pruebas
 
 ## Integrantes
 
