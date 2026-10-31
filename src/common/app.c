@@ -4,8 +4,9 @@
 #include <stdlib.h>
 
 #include "soa/instance.h"
-#include "soa/worker.h"
+#include "soa/shutdown.h"
 #include "soa/types.h"
+#include "soa/worker.h"
 
 static const char *instance_error(soa_status_t status)
 {
@@ -16,6 +17,18 @@ static const char *instance_error(soa_status_t status)
         return "ya existe una instancia con ese nombre";
     case SOA_SYSTEM_ERROR:
         return "fallo una operacion del sistema";
+    case SOA_NOT_FOUND:
+        return "no existe la instancia";
+    case SOA_NOT_READY:
+        return "la instancia aun no esta lista";
+    case SOA_INCOMPATIBLE_INSTANCE:
+        return "la instancia es incompatible";
+    case SOA_CLOSED:
+        return "la instancia ya esta cerrandose o cerrada";
+    case SOA_FINISHER_EXISTS:
+        return "otro finalizador ya conduce el cierre";
+    case SOA_NO_CONSUMER:
+        return "se requiere un consumidor para drenar los datos";
     default:
         return "error inesperado";
     }
@@ -56,8 +69,10 @@ int soa_app_main(int argc, char *argv[], program_t program, const char *name,
               "Ver docs/OPCIONES.md para el contrato completo.");
         if (program == PROGRAM_CREATOR) {
             puts("\nEstado: creación y publicación de memoria compartida implementadas.");
+        } else if (program == PROGRAM_FINISHER) {
+            puts("\nEstado: cierre, liberación y resumen final implementados.");
         } else {
-            puts("\nEstado: funcionalidad pendiente de implementación para este programa.");
+            puts("\nEstado: trabajador y registro CSV implementados.");
         }
         return EXIT_SUCCESS;
     }
@@ -87,7 +102,33 @@ int soa_app_main(int argc, char *argv[], program_t program, const char *name,
         return worker_run(&parsed, role);
     }
 
-    /* El finalizador todavía necesita su integración. */
+    if (program == PROGRAM_FINISHER) {
+        soa_instance_t *instance = NULL;
+        soa_shutdown_snapshot_t *snapshot = NULL;
+        soa_status_t status = soa_instance_open(parsed.name, &instance);
+
+        if (status == SOA_OK) {
+            status = soa_shutdown_run(&instance, &snapshot);
+        }
+        if (status != SOA_OK) {
+            if (instance != NULL) {
+                (void)soa_instance_close(&instance);
+            }
+            fprintf(stderr, "%s: %s (%s).\n", name, instance_error(status),
+                    parsed.name);
+            return EXIT_FAILURE;
+        }
+        status = soa_shutdown_snapshot_write_csv(snapshot, parsed.summary_path);
+        soa_shutdown_snapshot_free(&snapshot);
+        if (status != SOA_OK) {
+            fprintf(stderr, "%s: la instancia se libero, pero no se pudo escribir %s.\n",
+                    name, parsed.summary_path);
+            return EXIT_FAILURE;
+        }
+        printf("Instancia %s cerrada y liberada.\n", parsed.name);
+        return EXIT_SUCCESS;
+    }
+
     fprintf(stderr, "%s: argumentos validos; funcionalidad pendiente de implementación.\n",
             name);
     return EXIT_FAILURE;

@@ -284,6 +284,7 @@ soa_status_t soa_instance_open(const char *name, soa_instance_t **out)
     instance->read_lock_held = true;
     instance->mapped_size = size;
     instance->shared = shared;
+    (void)memcpy(instance->name, name, strlen(name) + 1U);
     *out = instance;
     return SOA_OK;
 

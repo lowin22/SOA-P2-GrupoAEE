@@ -9,7 +9,8 @@ PROGRAMS := creator producer consumer finisher
 COMMON_OBJECTS := build/common/app.o build/common/options.o \
 	build/common/instance.o build/common/participants.o build/common/buffer.o \
 	build/common/message.o build/common/random.o build/common/timing.o \
-	build/common/worker.o build/common/csv_writer.o
+	build/common/worker.o build/common/csv_writer.o build/common/summary_writer.o \
+	build/common/shutdown.o
 APP_OBJECTS := $(PROGRAMS:%=build/apps/%.o)
 OBJECTS := $(COMMON_OBJECTS) $(APP_OBJECTS) build/tests/options_test.o \
 	build/tests/buffer_test.o build/tests/buffer_integration.o
@@ -26,9 +27,10 @@ CSV_WRITER_STATE_TEST := build/tests/csv_writer_state_test
 CSV_WRITER_FULL_TEST := build/tests/csv_writer_full_test
 INSTANCE_TEST := build/tests/test_instance
 PARTICIPANTS_TEST := build/tests/test_participants
+SHUTDOWN_TEST := build/tests/test_shutdown
 
 .PHONY: all clean smoke test test-options test-instance test-participants \
-	test-buffer test-workers test-random test-python help
+	test-buffer test-workers test-random test-shutdown test-python help
 all: $(PROGRAMS)
 
 $(PROGRAMS): %: build/apps/%.o $(COMMON_OBJECTS)
@@ -124,7 +126,14 @@ test-buffer: all $(BUFFER_TEST) $(BUFFER_INTEGRATION)
 	./$(BUFFER_TEST)
 	bash tests/buffer_integration.sh "$(PYTHON)"
 
-# Ejecuta las pruebas de argumentos y las pruebas Python disponibles
+$(SHUTDOWN_TEST): tests/test_shutdown.c build/common/instance.o \
+		build/common/participants.o build/common/buffer.o build/common/timing.o \
+		build/common/summary_writer.o build/common/shutdown.o
+	mkdir -p "$(@D)"
+	$(CC) $(CPPFLAGS) $(CFLAGS) $^ $(LDLIBS) -o "$@"
+
+test-shutdown: all $(SHUTDOWN_TEST)
+	./$(SHUTDOWN_TEST)
 
 test-python: all build/tests/worker_control
 	@if find tests -maxdepth 1 -type f -name 'test_*.py' -print -quit | grep -q .; then \
@@ -147,8 +156,9 @@ help:
 	@echo 'test-options: comprobar el parser y los argumentos de los cuatro ejecutables'
 	@echo 'test-instance: comprobar memoria compartida y creator'
 	@echo 'test-participants: comprobar registro, IDs y retirada'
-	@echo 'test-workers requiere la integracion pendiente con P2-08'
+	@echo 'test-workers: comprobar productores, consumidores, pausas y cierre'
 	@echo 'test-buffer comprueba FIFO e integracion con memoria y registro'
+	@echo 'test-shutdown: comprobar cierre, precondiciones, resumen y recreación'
 	@echo 'test-python: ejecutar los test_*.py disponibles sin necesitar los ejecutables C'
 	@echo 'clean: eliminar objetos y ejecutables generados'
 
@@ -214,10 +224,9 @@ build/tests/worker_control: build/tests/worker_control.o build/common/instance.o
 test-random: build/tests/random_test
 	./build/tests/random_test
 
-test-workers:
-	@echo 'Pendiente integrar P2-08 y activar los trabajadores con su escritor CSV' >&2
-	@exit 1
+test-workers: all build/tests/worker_control
+	$(PYTHON) -m unittest tests/test_workers.py -v
 
-test: test-options test-instance test-participants test-buffer smoke test-python test-random test-csv-writer test-worker-metrics test-summary-writer
+test: test-options test-instance test-participants test-buffer test-shutdown smoke \
+	test-python test-random test-csv-writer test-worker-metrics test-summary-writer
 	@echo 'OK: pruebas disponibles ejecutadas.'
-	@echo 'PENDIENTE: activar trabajadores y completar el cierre.'

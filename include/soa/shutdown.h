@@ -11,6 +11,10 @@ typedef struct soa_shutdown_snapshot soa_shutdown_snapshot_t;
 soa_status_t soa_shutdown_run(soa_instance_t **instance,
                               soa_shutdown_snapshot_t **snapshot);
 
+/* Escribe el resumen desde la copia privada, sin acceder a memoria compartida. */
+soa_status_t soa_shutdown_snapshot_write_csv(
+    const soa_shutdown_snapshot_t *snapshot, const char *path);
+
 void soa_shutdown_snapshot_free(soa_shutdown_snapshot_t **snapshot);
 
 #endif
