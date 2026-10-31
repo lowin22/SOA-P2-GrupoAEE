@@ -3,6 +3,7 @@
 
 #include <pthread.h>
 #include <stdbool.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -73,6 +74,7 @@ struct soa_instance {
     uint32_t participant_id;
     size_t mapped_size;
     soa_shared_instance_t *shared;
+    char name[NAME_MAX + 1U];
 };
 
 #endif
