@@ -1,18 +1,18 @@
 # P2-03 — Matriz de requisitos, pruebas y evidencia
 
-**Estado:** diseño de pruebas, no evidencia de pruebas ejecutadas.
+**Estado:** suite funcional implementada y parcialmente validada; se conservan pendientes de cobertura y revisión.
 **Base:** enunciado oficial del Proyecto 2 e interfaces acordadas en P2-01.
 **Responsables:** cada autor prueba su módulo; Esteban integra suite y verificador en P2-11/P2-12; Edwin cubre carreras de cierre (P2-13); Adrián cubre estrés y sanitizers (P2-14).
 
 ## 1. Reglas generales
 
-- `make test` ejecutará pruebas automáticas y devolverá código distinto de cero ante cualquier incumplimiento. **El target actual declara que la suite aún no está implementada**; no atribuirle cobertura.
+- `make test` ejecutará pruebas automáticas y devolverá código distinto de cero ante cualquier incumplimiento. **El target está implementado y se ha ejecutado correctamente**; la cobertura se acredita únicamente para los casos comprobados.
 - Los timeouts en scripts detectan falta de progreso; jamás sustituyen los bloqueos POSIX del sistema.
 - Cada caso tendrá: identificador, comando reproducible, configuración, salida esperada, salida obtenida, código de salida y ubicación de CSV/evidencia. Al implementar, registrar en esta tabla los resultados reales.
 - Usar nombres POSIX únicos por prueba (p. ej., `/soa_p2_test_<identificador>`), limpiar únicamente recursos creados por el caso y no interferir con otras instancias.
 - Para verificar mensajes, cruzar los CSV por `(producer_id,sequence)`, `enqueue_seq`, `dequeue_seq` y `payload_hex`; no inferir FIFO del orden de las líneas de distintos archivos.
 - Los procesos `producer` y `consumer` deberán lanzarse como **procesos distintos**, nunca sustituirse por hilos.
-- Los comandos indicados son **plantillas de orquestación pendientes de implementar** en `tests/` y `scripts/`; no representan resultados observados.
+- Los escenarios implementados se ejecutan mediante `make test`; los demás permanecen como requisitos pendientes de comprobación.
 
 ## 2. Matriz obligatoria
 
@@ -74,3 +74,94 @@ Por cada corrida conservar: nombres de instancia, parámetros, semillas individu
 - [ ] Confirmar los nombres definitivos de scripts y archivos antes de automatizarlos.
 - [ ] Incorporar los comandos concretos y resultados reales conforme los demás Issues avancen.
 - [ ] Dirigir el Pull Request del P2-03 a `develop` y no a `main`.
+
+## 7. Evidencias de ejecución del P2-12 — 31 de octubre de 2026
+
+### Suite general
+
+Comando: `make -j4 test`, protegido externamente por un límite de 120 segundos.
+
+- Pruebas Python: 65 aprobadas.
+- Casos del analizador de argumentos: 264 aprobados.
+- Código de salida: 0.
+- La ejecución no alcanzó el límite de tiempo establecido.
+
+Las pruebas Python incluyen verificaciones de mensajes duplicados,
+mensajes faltantes, integridad de contenido y orden FIFO.
+
+### Integración de productores y consumidores
+
+Comando: `make test-buffer`.
+
+| Escenario | Capacidad | Productores | Consumidores | Mensajes | Resultado |
+|---|---:|---:|---:|---:|---|
+| T02 | 8 | 1 | 1 | 1000 | Aprobado |
+| T03 | 8 | 4 | 4 | 4000 | Aprobado |
+| T04 | 1 | 4 | 4 | 4000 | Aprobado |
+
+Estos escenarios utilizan el ejecutable auxiliar de integración,
+la memoria compartida real y el verificador CSV.
+
+### Bloqueo y reanudación
+
+Se incorporaron dos pruebas funcionales en `tests/test_workers.py`:
+
+- T05: productor reanudado cuando un consumidor libera espacio.
+- T06: consumidor reanudado cuando un productor incorpora mensajes.
+
+Ambas pruebas utilizan los ejecutables `producer` y `consumer`,
+comprueban contadores y validan sus registros CSV.
+
+### Protección contra bloqueos
+
+El objetivo `test-buffer` incorpora un límite de 90 segundos,
+con terminación forzada adicional tras cinco segundos.
+
+Este control evita esperas indefinidas durante las pruebas;
+no sustituye la sincronización del programa.
+
+### Aspectos todavía pendientes de revisión
+
+- Comprobar específicamente que un error inesperado del verificador
+  provoque un fallo de `make test`.
+- Confirmar la cobertura completa de los escenarios T01-T17.
+- Ejecutar y documentar una reconstrucción desde un entorno limpio,
+  según T17.
+- Incorporar las evidencias de cierre y estrés que correspondan
+  a los demás issues del equipo.
+
+Las cifras anteriores describen ejecuciones observadas y no implican
+que todos los escenarios de la matriz estén completos.
+
+### Propagación de errores y reconstrucción limpia
+
+**Propagación de errores:**
+
+Se ejecutó `make test-python` con un intérprete temporal que
+finalizaba intencionalmente con código 17.
+
+Resultado observado:
+- Código del intérprete simulado: 17.
+- Código de salida de `make`: 2.
+- Resultado: correcto; el objetivo no ocultó el fallo.
+
+Esta comprobación valida la propagación de errores de `test-python`,
+pero no constituye una inyección directa de un CSV incorrecto.
+
+**Reconstrucción limpia (T17):**
+
+Se ejecutaron, en orden:
+
+1. `make clean`
+2. `make -j4`
+3. `make -j4 test`, con límite externo de 120 segundos.
+
+Resultados:
+- Compilación completada correctamente.
+- 65 pruebas Python aprobadas.
+- 264 casos del analizador aprobados.
+- Código de salida final: 0.
+
+La reconstrucción se realizó en el directorio de trabajo actual,
+después de eliminar los artefactos compilados. No se utilizó
+una copia independiente del repositorio.
