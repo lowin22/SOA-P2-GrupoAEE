@@ -107,5 +107,4 @@ La detección de fugas se desactivó por la limitación de LeakSanitizer bajo pt
 No se afirma comprobación de fugas ni ausencia de carreras
 Después se restauró la compilación normal
 
-La implementación y las pruebas se realizaron con asistencia de Codex
 La revisión de Edwin y el PR integrado siguen pendientes

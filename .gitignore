@@ -86,5 +86,8 @@ __pycache__/
 # Documentacion del buffer
 !/docs/BUFFER.md
 
+# Documentacion de trabajadores
+!/docs/TRABAJADORES.md
+
 # Configuración local de Visual Studio Code.
 /.vscode/
