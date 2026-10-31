@@ -36,17 +36,23 @@ for program in creator producer consumer finisher; do
     expect_error 'valor' "./$program" --name --help
 done
 
-# Creator ejecuta P2-05 después de validar; los demás conservan operación pendiente.
+# Creator debe aceptar sus argumentos y crear la instancia.
 ./creator --capacity 1024 --name "$creator_name" > "$test_dir/stdout" \
     2> "$test_dir/stderr"
 [[ ! -s "$test_dir/stderr" ]]
 LC_ALL=C grep -Fq -- 'creada con capacidad 1024' "$test_dir/stdout"
-expect_error 'argumentos validos' ./producer --name /args_valid --id 1024 \
+
+# Productores y consumidores ya están implementados.
+# Usamos una instancia inexistente para comprobar que los argumentos
+# son válidos sin iniciar procesos de intercambio de mensajes.
+expect_error 'instancia' ./producer --name /args_valid --id 1024 \
     --mean-ms 1000 --seed 18446744073709551615 --messages 1 --log "$test_dir/new.csv"
-expect_error 'argumentos validos' ./producer --name /args_valid --id 1 \
+expect_error 'instancia' ./producer --name /args_valid --id 1 \
     --mean-ms 0 --seed 0 --log "$test_dir/new.csv"
-expect_error 'argumentos validos' ./consumer --name /args_valid --id 1 \
+expect_error 'instancia' ./consumer --name /args_valid --id 1 \
     --mean-ms 2.5 --seed 1 --log "$test_dir/new.csv"
+
+# Finisher todavía no tiene activada su implementación.
 expect_error 'argumentos validos' ./finisher --name /args_valid --summary "$test_dir/new.csv"
 
 for value in 0 1025 -1 8abc 18446744073709551616; do

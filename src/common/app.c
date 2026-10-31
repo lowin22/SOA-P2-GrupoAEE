@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "soa/instance.h"
+#include "soa/worker.h"
 #include "soa/types.h"
 
 static const char *instance_error(soa_status_t status)
@@ -79,6 +80,14 @@ int soa_app_main(int argc, char *argv[], program_t program, const char *name,
         return EXIT_SUCCESS;
     }
 
+    /* Ejecutar el trabajador según su función. */
+    if (program == PROGRAM_PRODUCER || program == PROGRAM_CONSUMER) {
+        soa_role_t role = program == PROGRAM_PRODUCER
+            ? SOA_ROLE_PRODUCER : SOA_ROLE_CONSUMER;
+        return worker_run(&parsed, role);
+    }
+
+    /* El finalizador todavía necesita su integración. */
     fprintf(stderr, "%s: argumentos validos; funcionalidad pendiente de implementación.\n",
             name);
     return EXIT_FAILURE;

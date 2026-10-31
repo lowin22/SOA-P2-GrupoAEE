@@ -6,9 +6,6 @@ Proyecto de Sistemas Operativos Avanzados, II semestre de 2026. Se implementará
 cuatro programas C17 sobre GNU/Linux con memoria compartida POSIX: `creator`,
 `producer`, `consumer` y `finisher`.
 
-**Estado:** están implementados argumentos (P2-04), creación y publicación de
-memoria compartida (P2-05), y conexiones, registro y retirada (P2-07). El
-intercambio en el buffer, los trabajadores completos y el cierre siguen pendientes.
 
 ## Integrantes
 
