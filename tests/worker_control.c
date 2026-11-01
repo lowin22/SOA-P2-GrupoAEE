@@ -3,11 +3,27 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3) {
+    if (argc != 3 && argc != 4) {
+        return 1;
+    }
+    bool wait_producers = strcmp(argv[1], "wait-producers") == 0;
+    bool wait_consumers = strcmp(argv[1], "wait-consumers") == 0;
+    unsigned long expected = 0;
+    if (wait_producers || wait_consumers) {
+        char *end;
+        if (argc != 4) {
+            return 1;
+        }
+        expected = strtoul(argv[3], &end, 10);
+        if (*end != '\0' || expected == 0 || expected > SOA_MAX_PARTICIPANT_ID) {
+            return 1;
+        }
+    } else if (argc != 3) {
         return 1;
     }
     soa_instance_t *instance = NULL;
@@ -19,7 +35,19 @@ int main(int argc, char *argv[])
         return 1;
     }
     int result = 0;
-    if (strcmp(argv[1], "close") == 0) {
+    if (wait_producers || wait_consumers) {
+        uint32_t *active = wait_producers ? &shared->active_producers
+                                         : &shared->active_consumers;
+        while (*active < expected && shared->state == SOA_STATE_OPEN) {
+            if (pthread_cond_wait(&shared->state_changed, &shared->mutex) != 0) {
+                result = 1;
+                break;
+            }
+        }
+        if (*active < expected) {
+            result = 1;
+        }
+    } else if (strcmp(argv[1], "close") == 0) {
         if (shared->active_consumers == 0
             && (shared->active_producers != 0 || shared->occupancy != 0)) {
             result = 1;

@@ -5,6 +5,9 @@ override CFLAGS += -std=c17 -Wall -Wextra -Wpedantic -Werror -pthread
 override LDLIBS += -pthread -lm
 
 PYTHON ?= python3
+SANITIZER_CFLAGS := -O1 -g -fno-omit-frame-pointer
+ASAN_OPTIONS ?= halt_on_error=1
+UBSAN_OPTIONS ?= halt_on_error=1:print_stacktrace=1
 PROGRAMS := creator producer consumer finisher
 COMMON_OBJECTS := build/common/app.o build/common/options.o \
 	build/common/instance.o build/common/participants.o build/common/buffer.o \
@@ -30,7 +33,8 @@ PARTICIPANTS_TEST := build/tests/test_participants
 SHUTDOWN_TEST := build/tests/test_shutdown
 
 .PHONY: all clean smoke test test-options test-instance test-participants \
-	test-buffer test-workers test-random test-shutdown test-python help
+	test-buffer test-workers test-random test-shutdown test-python test-stress \
+	asan ubsan test-asan test-ubsan test-sanitizers help
 all: $(PROGRAMS)
 
 $(PROGRAMS): %: build/apps/%.o $(COMMON_OBJECTS)
@@ -157,6 +161,10 @@ help:
 	@echo 'test-instance: comprobar memoria compartida y creator'
 	@echo 'test-participants: comprobar registro, IDs y retirada'
 	@echo 'test-workers: comprobar productores, consumidores, pausas y cierre'
+	@echo 'test-stress: verificar 32 productores y 32 consumidores sin pausas'
+	@echo 'asan y ubsan: reconstruir los ejecutables con el sanitizer elegido'
+	@echo 'test-asan y test-ubsan: reconstruir y ejecutar la suite instrumentada'
+	@echo 'test-sanitizers: ejecutar ASan y UBSan en orden'
 	@echo 'test-buffer comprueba FIFO e integracion con memoria y registro'
 	@echo 'test-shutdown: comprobar intercalados, precondiciones, resumen y recreación'
 	@echo 'test-python: ejecutar los test_*.py disponibles sin necesitar los ejecutables C'
@@ -227,6 +235,30 @@ test-random: build/tests/random_test
 test-workers: all build/tests/worker_control
 	$(PYTHON) -m unittest tests/test_workers.py -v
 
+test-stress: all build/tests/worker_control
+	timeout --signal=TERM --kill-after=5s 120s $(PYTHON) tests/stress.py
+
+asan test-asan: SANITIZER = address
+ubsan test-ubsan: SANITIZER = undefined
+
+asan ubsan:
+	$(MAKE) clean
+	$(MAKE) CFLAGS="$(SANITIZER_CFLAGS) -fsanitize=$(SANITIZER)" \
+		LDFLAGS="$(LDFLAGS) -fsanitize=$(SANITIZER)" all
+
+test-asan: asan
+test-ubsan: ubsan
+
+test-asan test-ubsan:
+	ASAN_OPTIONS="$(ASAN_OPTIONS)" UBSAN_OPTIONS="$(UBSAN_OPTIONS)" \
+		timeout --signal=TERM --kill-after=5s 300s $(MAKE) \
+		CFLAGS="$(SANITIZER_CFLAGS) -fsanitize=$(SANITIZER)" \
+		LDFLAGS="$(LDFLAGS) -fsanitize=$(SANITIZER)" test
+
+test-sanitizers:
+	$(MAKE) test-asan
+	$(MAKE) test-ubsan
+
 test: test-options test-instance test-participants test-buffer test-shutdown smoke \
-	test-python test-random test-csv-writer test-worker-metrics test-summary-writer
+	test-python test-random test-csv-writer test-worker-metrics test-summary-writer test-stress
 	@echo 'OK: pruebas disponibles ejecutadas.'

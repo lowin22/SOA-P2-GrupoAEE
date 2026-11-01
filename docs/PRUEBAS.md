@@ -60,11 +60,13 @@ Por cada corrida conservar: nombres de instancia, parámetros, semillas individu
 6. Validar eventos JOIN/LEAVE, cambio de estado mediante evidencia acordada y ausencia de IDs duplicados durante toda la instancia.
 7. Devolver código distinto de cero ante log ausente, truncado, errores de datos o incumplimiento; diagnosticar ID y secuencia cuando sea posible.
 
-## 5. Registro de resultados (para completar cuando existan implementaciones)
+## 5. Registro de resultados
 
 | Caso | Comando / script ejecutado | Resultado esperado | Resultado obtenido | Evidencia | Estado |
 |---|---|---|---|---|---|
-| T01–T06, T12–T17 | Pendiente de consolidación | Según matriz | Cobertura parcial | Secciones 7 y 9 | Pendiente |
+| Suite general | `make -j4 test` | Las pruebas disponibles terminan sin errores | 71 pruebas Python, 264 casos del parser y suites C aprobadas | Secciones 7, 9 y 10 | Aprobado |
+| T12 | `make test-stress` | 32/32 con conservación y cierre completo | 32000 mensajes verificados por capacidad | Sección 10 | Aprobado |
+| T13 | `make test-sanitizers ASAN_OPTIONS=detect_leaks=0:halt_on_error=1` | Suite y estrés sin errores de ASan o UBSan | Ambas configuraciones aprobadas, detección de fugas desactivada en ASan | Sección 10 | Aprobado sin comprobación de fugas |
 | T07–T11 (P2-13) | `make -j4 test-shutdown` | Corte ordenado, conservación, rechazo tardío y destrucción única | Todos los intercalados terminaron con código 0 | `tests/test_shutdown.c` y tabla de la sección 8 | Aprobado |
 | 45 corridas | Pendiente | 45 corridas verificadas | No ejecutado | Pendiente | Pendiente |
 
@@ -128,7 +130,7 @@ no sustituye la sincronización del programa.
 - Confirmar la cobertura completa de los escenarios T01-T17.
 - Ejecutar y documentar una reconstrucción desde un entorno limpio,
   según T17.
-- Incorporar la evidencia de estrés y sanitizers de P2-14.
+- La evidencia de estrés y sanitizers está en la sección 10
 
 Las cifras anteriores describen ejecuciones observadas y no implican
 que todos los escenarios de la matriz estén completos.
@@ -207,3 +209,19 @@ Resultados:
 La reconstrucción se realizó en el directorio de trabajo actual,
 después de eliminar los artefactos compilados. No se utilizó
 una copia independiente del repositorio.
+
+## 10. Estrés y sanitizers
+
+Validación sobre d27bf8b con los cambios locales de estrés y sanitizers
+
+make test incluye el estrés con 32 productores y 32 consumidores reales
+Cada productor envía 1000 mensajes con media cero y semilla igual a su ID
+Se comprueban capacidades 1 y 8 con el verificador CSV y el resumen del finisher real
+
+Pasaron la suite nativa, ASan y UBSan
+Cada configuración verificó 32000 mensajes por capacidad sin pérdidas ni duplicados y con cierre completo
+La suite incluyó 71 pruebas Python, 264 casos del parser y las suites C existentes
+
+Los [comandos, entorno y límites](ESTRES.md) permiten repetir la validación
+Los CSV y diagnósticos de cada ejecución se generan en results/runs y están ignorados por Git
+Los resultados sanitizados no se usan para medir rendimiento
