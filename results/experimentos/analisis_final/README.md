@@ -21,6 +21,11 @@ Las 45 corridas finalizaron correctamente.
 En cada corrida se verificaron los registros CSV de los
 participantes y su correspondencia con el resumen final.
 
+Los resultados agrupados reportan media y desviación estándar
+muestral entre cinco repeticiones para throughput y latencia media.
+El P95 publicado es el promedio de los percentiles 95 calculados
+por corrida.
+
 ## Archivos
 
 - resultados_individuales.csv: métricas por corrida.
@@ -38,3 +43,11 @@ salidas de procesos y manifiestos se conservan localmente
 en la carpeta de la sesión original.
 
 Los resultados publicados provienen de ejecuciones reales.
+
+## Limitaciones de la evidencia conservada
+
+Los consolidados no incluyen los acumuladores de espera por
+participante ni el entorno completo de la sesión original. No debe
+suponerse que el entorno posterior usado para estrés y sanitizers
+fue el mismo de estas 45 corridas. Para completar esos datos se
+requiere recuperar la sesión original o repetir el experimento.
