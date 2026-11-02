@@ -2,100 +2,131 @@
 
 ## Proyecto 2 — Buffer compartido entre procesos
 
-Proyecto de Sistemas Operativos Avanzados, II semestre de 2026. Se implementarán
-cuatro programas C17 sobre GNU/Linux con memoria compartida POSIX: `creator`,
-`producer`, `consumer` y `finisher`.
+Sistema de múltiples productores y consumidores implementado en C17 para GNU/Linux. Cuatro programas independientes (`creator`, `producer`, `consumer` y `finisher`) intercambian mensajes mediante un buffer circular FIFO en memoria compartida POSIX. El protocolo usa mutex y variables de condición compartidos entre procesos, registro de participantes y cierre cooperativo con drenaje.
 
-**Estado:** están implementados argumentos (P2-04), creación y publicación de
-memoria compartida (P2-05), buffer FIFO y sincronización (P2-06), conexiones,
-registro y retirada (P2-07), CSV y métricas (P2-08), trabajadores y pausas (P2-09),
-y cierre seguro con resumen privado (P2-10).
-
-El módulo de buffer se comprueba con `make test-buffer`: incluye operaciones FIFO,
-condiciones compartidas y pruebas entre procesos. La integración con memoria y
-registro usa instancias y participantes reales; los CSV de 1000 y 4000 mensajes
-pasan el verificador. El [contrato del buffer](docs/BUFFER.md) detalla bloqueos,
-retornos y pruebas.
+El proyecto incluye validación de argumentos, verificación de identidad, contenido y FIFO, métricas CSV, pruebas de intercalados, estrés 32/32, ASan/UBSan y un experimento de 45 corridas.
 
 ## Integrantes
 
 | Nombre completo | Carné | Usuario de GitHub |
 |---|---:|---|
-| Adrián Vinicio Campos León | 2025800296 | @Adrianvc94 |
-| Esteban Chaves Morera | 2024800687 | @davidchaves04-code |
-| Edwin Loria Fonseca | 2026801284 | @lowin22 |
+| Adrián Vinicio Campos León | 2025800296 | [@Adrianvc94](https://github.com/Adrianvc94) |
+| Esteban Chaves Morera | 2024800687 | [@davidchaves04-code](https://github.com/davidchaves04-code) |
+| Edwin Loria Fonseca | 2026801284 | [@lowin22](https://github.com/lowin22) |
 
-## Compilación nativa
+## Entorno probado
 
-Requisitos: GNU/Linux, GCC con C17, GNU Make y Bash.
+- Ubuntu 26.04.1 LTS de 64 bits sobre WSL2.
+- Kernel Linux 6.18.33.2-microsoft-standard-WSL2.
+- GCC 15.2.0.
+- Intel Core i7-13700H, con 20 procesadores lógicos visibles.
+- GNU Make, Bash y Python 3.
+
+También se proporciona un entorno Docker Compose. Los detalles y las limitaciones de la ejecución instrumentada están en [`docs/ESTRES.md`](docs/ESTRES.md).
+
+## Compilación y pruebas
 
 ```bash
-make -j
-make test
-make smoke
-./creator --help
-./producer --help
-./consumer --help
-./finisher --help
 make clean
+make -j4
+make -j4 test
 ```
 
-Se compila con `-std=c17 -Wall -Wextra -Wpedantic -Werror -pthread`.
-Los binarios se generan en la raíz y los objetos/dependencias en `build/`.
-`make test` ejecuta la cobertura disponible de argumentos e infraestructura y falla
-ante incumplimientos. Incluye las suites de P2-04 a P2-10 disponibles en esta rama.
-`make help` describe los objetivos disponibles.
+Se compila con `-std=c17 -Wall -Wextra -Wpedantic -Werror -pthread`. Los binarios se generan en la raíz y los objetos en `build/`. `make test` falla ante cualquier incumplimiento e incluye argumentos, memoria, registro, buffer, trabajadores, cierre, verificadores y estrés con 32 productores y 32 consumidores.
 
-`make test-stress` verifica 32 productores y 32 consumidores con pausas cero
-Está incluido en `make test` y comprueba 32000 mensajes en capacidades 1 y 8
-`make test-asan` y `make test-ubsan` reconstruyen y ejecutan la suite instrumentada
-El [documento de estrés y sanitizers](docs/ESTRES.md) incluye comandos y limitaciones
-
-## Opciones de los ejecutables
+Objetivos adicionales:
 
 ```bash
-./creator --name /grupo_aee --capacity 8
-./producer --name /grupo_aee --id 1 --mean-ms 5 --seed 21 --messages 1000 --log results/p1.csv
-./consumer --name /grupo_aee --id 1 --mean-ms 10 --seed 11 --log results/c1.csv
-./finisher --name /grupo_aee --summary results/resumen.csv
+make smoke
+make test-buffer
+make test-shutdown
+make test-stress
+make -j4 test-asan ASAN_OPTIONS=detect_leaks=0:halt_on_error=1
+make -j4 test-ubsan
+make help
 ```
 
-`creator` crea la instancia y `finisher` coordina el cierre, libera los recursos y
-escribe el resumen. `producer` y `consumer` ejecutan el intercambio, las pausas y
-el registro CSV completo.
-Solo `--messages` es opcional: omitirla significa producir hasta cierre.
-Capacidad e IDs: 1..1024; media finita: 0..1000 ms; semilla: 0..`UINT64_MAX`;
-cuota explícita: 1..`UINT64_MAX`. Nombres: `/` y caracteres ASCII alfanuméricos,
-`_` o `-`, máximo 255 bytes totales. Opciones completas, en cualquier orden,
-sin repeticiones; `--help` se usa solo. Los IDs usados se comprueban en P2-07.
-El [contrato de opciones](docs/OPCIONES.md) detalla formatos, errores, API y pruebas.
+LeakSanitizer se deshabilitó porque no funciona bajo `ptrace` en el entorno WSL2 probado. ASan mantiene la detección de accesos inválidos; UBSan comprueba comportamiento indefinido. Ninguno demuestra ausencia de carreras entre procesos.
 
-`soa_instance_create` conserva la propiedad del nombre publicado para el futuro
-`finisher`: al retornar desmonta y cierra sus recursos privados, pero no ejecuta
-`shm_unlink`. Cada `soa_instance_open` entrega al llamador un descriptor, mapeo y
-bloqueo de vida que deben liberarse con `soa_instance_close`.
+## Ejecución completa
 
-El registro acepta IDs `1..1024` de forma independiente por rol y conserva el
-historial después de la retirada. Por ello puede haber hasta 1024 activos por rol,
-pero también como máximo 1024 registros históricos por rol durante toda la vida de
-la instancia: retirar un ID no libera su identidad para reutilización. Un trabajador
-completa operaciones y métricas antes de `soa_participant_unregister`; al
-confirmarse `LEAVE` ya no vuelve a tocar la instancia. El evento privado puede
-escribirse y cerrarse después sin bloquear al finalizador, cuyo resumen usa los
-acumuladores compartidos ya finalizados.
+El siguiente ejemplo usa un productor y un consumidor. El productor tiene cuota finita; por ello se espera su terminación antes de solicitar el cierre.
 
-El finalizador exige un consumidor activo cuando existen productores o mensajes
-pendientes. Tras reclamar el cierre impide registros nuevos, despierta las tres
-condiciones, espera buffer vacío y retirada de participantes, toma un snapshot
-privado, marca la publicación como retirada y destruye las primitivas bajo el
-bloqueo exclusivo del descriptor. Finalmente elimina el nombre POSIX, por lo que
-puede crearse otra instancia con el mismo nombre. El CSV se escribe únicamente
-después de liberar la memoria compartida.
+```bash
+mkdir -p results/demo
+
+./creator --name /grupo_aee --capacity 8
+
+./consumer --name /grupo_aee --id 1 --mean-ms 10 --seed 11 \
+  --log results/demo/c1.csv &
+consumer_pid=$!
+
+./producer --name /grupo_aee --id 1 --mean-ms 5 --seed 21 \
+  --messages 1000 --log results/demo/p1.csv
+
+./finisher --name /grupo_aee --summary results/demo/resumen.csv
+wait "$consumer_pid"
+
+python3 scripts/verificar_csv.py \
+  results/demo/p1.csv results/demo/c1.csv \
+  --validar-ciclo --summary results/demo/resumen.csv
+```
+
+El orden del protocolo es:
+
+1. `creator` crea y publica la instancia.
+2. Consumidores y productores se conectan y registran IDs únicos por rol.
+3. Los productores insertan; los consumidores extraen FIFO y procesan fuera del mutex.
+4. Después de terminar los productores, `finisher` cambia a `CLOSING`.
+5. Los consumidores drenan los mensajes aceptados y se retiran.
+6. `finisher` espera participantes y conexiones, destruye las primitivas, elimina el nombre POSIX y escribe el resumen.
+
+Un productor sin `--messages` continúa hasta que `finisher` solicite el cierre. El cierre se rechaza y la instancia permanece `OPEN` si existen productores o datos pendientes pero no hay consumidores activos.
+
+## Opciones
+
+```text
+./creator  --name NOMBRE --capacity CAPACIDAD
+./producer --name NOMBRE --id ID --mean-ms MS --seed SEMILLA
+           [--messages CUOTA] --log ARCHIVO
+./consumer --name NOMBRE --id ID --mean-ms MS --seed SEMILLA --log ARCHIVO
+./finisher --name NOMBRE --summary ARCHIVO
+```
+
+- Capacidad e IDs: `1..1024`.
+- Media exponencial: valor finito entre `0..1000` ms; cero desactiva pausas.
+- Semilla: `0..UINT64_MAX`.
+- Cuota explícita: `1..UINT64_MAX`.
+- Nombre: `/` seguido de caracteres ASCII alfanuméricos, `_` o `-`, con máximo de 255 bytes.
+- Los IDs no se reutilizan dentro del mismo rol durante la vida de una instancia.
+- `--help` muestra la ayuda de cada ejecutable.
+
+El contrato completo está en [`docs/OPCIONES.md`](docs/OPCIONES.md).
+
+## CSV y métricas
+
+Cada trabajador escribe su propio CSV. Los eventos incluyen rol, ID, tipo, tiempo monotónico, estado, identidad del mensaje, secuencias globales, ocupación y payload. La escritura ocurre fuera de la región crítica; por eso FIFO se verifica mediante `enqueue_seq` y `dequeue_seq`, no mediante el orden físico de las líneas.
+
+El resumen de `finisher` contiene aceptados, extraídos, pendientes, marcas temporales, throughput y duración del cierre. Su esquema reserva columnas de latencia, pero el ejecutable no las completa: el análisis reconstruye la latencia media y el P95 cruzando los eventos de inserción y extracción. Los esquemas y unidades están documentados en [`docs/FORMATOS_CSV.md`](docs/FORMATOS_CSV.md).
+
+## Experimentos
+
+La matriz publicada contiene 45 corridas: capacidades 1, 8 y 64; tres relaciones entre tasas; cinco repeticiones; cuatro productores y cuatro consumidores; 800 mensajes por corrida.
+
+```bash
+# Mostrar la planificación sin ejecutar procesos
+python3 scripts/ejecutar_experimentos.py
+
+# Ejecutar una configuración
+python3 scripts/ejecutar_experimentos.py --ejecutar --corrida 1
+
+# Ejecutar las 45 configuraciones
+python3 scripts/ejecutar_experimentos.py --ejecutar --todas
+```
+
+Los parámetros, semillas, consolidados y gráficas están en [`results/experimentos/`](results/experimentos/). El análisis publicado no conserva las métricas cuantitativas de espera por participante ni el manifiesto completo del entorno original; esta limitación se declara en el informe.
 
 ## Docker
-
-Requiere Docker Engine y Compose v2. En Linux, exportar el UID/GID para que los
-archivos generados en el montaje pertenezcan al usuario local:
 
 ```bash
 export LOCAL_UID="$(id -u)"
@@ -103,48 +134,50 @@ export LOCAL_GID="$(id -g)"
 docker compose build
 docker compose up -d dev
 docker compose exec dev make clean
-docker compose exec dev make -j
-docker compose exec dev make smoke
-docker compose exec dev ./creator --help
+docker compose exec dev make -j4 test
 docker compose down
 ```
 
-El repositorio se monta en `/workspace`; los archivos persisten en el anfitrión.
-Ejecutar cada participante con `docker compose exec dev ...` permite usar procesos
-independientes dentro del mismo contenedor. Una vez implementado el sistema, cerrar
-con `finisher` antes de detener Docker. El tamaño de `/dev/shm` configurado es 64 MiB
-y debe revisarse contra la representación compartida aprobada.
-
-Al alternar entre compilador nativo y contenedor, ejecutar `make clean` antes de
-recompilar para no mezclar objetos de entornos distintos.
+El repositorio se monta en `/workspace` y `/dev/shm` dispone de 64 MiB. Al alternar entre compilación nativa y contenedor se debe ejecutar `make clean` para no mezclar objetos.
 
 ## Estructura y responsabilidades
 
 | Ruta | Contenido |
 |---|---|
-| `src/apps/` | Cuatro puntos de entrada independientes. |
-| `src/common/`, `include/soa/` | Módulos compartidos e interfaces. |
-| `tests/` | Parser, argumentos, memoria, registro, buffer, cierre e integración. |
-| `scripts/` | Futuro verificador y experimentos. |
-| `results/` | Instrucciones y futura evidencia seleccionada. |
-| `docs/` | Diseño, planificación y contratos. |
+| `src/apps/` | Puntos de entrada de los cuatro ejecutables. |
+| `src/common/` | Memoria, buffer, participantes, trabajadores, cierre y métricas. |
+| `include/soa/` | Interfaces y tipos públicos. |
+| `tests/` | Pruebas C, Python, integración, carreras y estrés. |
+| `scripts/` | Verificación CSV, experimentos, análisis y gráficas. |
+| `results/` | Configuraciones y evidencia experimental seleccionada. |
+| `docs/` | Arquitectura, protocolo, pruebas, estrés e informe. |
 
-- Edwin: memoria, admisión, registro y cierre.
-- Adrián: opciones, buffer, trabajadores y pausas.
-- Esteban: entorno, métricas, verificador y experimentos.
-- Cada autor aporta pruebas y documentación; arquitectura y cierre se revisan entre los tres.
+- **Edwin:** memoria, admisión, registro, cierre e intercalados.
+- **Adrián:** opciones, buffer, trabajadores, pausas, estrés y sanitizers.
+- **Esteban:** CSV, métricas, verificador, suite y experimentos.
+- **Equipo completo:** arquitectura, revisión integral, informe y defensa.
 
-## Documentación y siguiente hito
+## Documentación
 
-- [Plan de implementación e Issues](docs/PLAN_IMPLEMENTACION.md)
-- [Plan de la cáscara](docs/PLAN_CASCARA.md)
+- [Informe](docs/informe.pdf)
+- [Guía de defensa individual](docs/DEFENSA.md)
 - [Arquitectura](docs/ARQUITECTURA.md)
-- [Protocolo](docs/PROTOCOLO.md)
-- [Contrato CSV](docs/FORMATOS_CSV.md)
-- [Pruebas](docs/PRUEBAS.md)
-- [Flujo de ramas y PR](docs/FLUJO_GIT.md)
+- [Protocolo de sincronización y cierre](docs/PROTOCOLO.md)
+- [Formato de CSV y métricas](docs/FORMATOS_CSV.md)
+- [Pruebas y evidencia](docs/PRUEBAS.md)
+- [Estrés y sanitizers](docs/ESTRES.md)
+- [Herramientas y scripts](scripts/README.md)
+- [Resultados experimentales](results/experimentos/analisis_final/README.md)
 
-Primero aprobar publicación, admisión, cierre e interfaces en P2-01 y el contrato
-CSV en P2-03. Luego integrar creación, intercambio 1/1, verificación, cierre y
-recreación del nombre. Los documentos técnicos actuales identifican decisiones
-pendientes; no constituyen un protocolo ya aprobado.
+El PDF del informe se regenera, si se dispone de LaTeX e IEEEtran, mediante:
+
+```bash
+cd docs
+latexmk -pdf -interaction=nonstopmode -halt-on-error informe.tex
+```
+
+## Procedencia y licencia
+
+El código, las pruebas, los scripts, las gráficas y la documentación fueron elaborados por el equipo para este proyecto. No se incorporó una implementación externa del buffer o de su sincronización. Las lecturas de Dijkstra y Birrell se utilizan como fundamento conceptual y se citan en el informe. GCC, GNU Make, Python, Docker y las interfaces POSIX se usan bajo sus licencias respectivas y no se redistribuyen como parte del código del proyecto.
+
+Este repositorio académico no concede una licencia general de reutilización. La etiqueta anotada `p2-entrega`, el hash definitivo y el paquete de entrega se incorporarán en P2-17.

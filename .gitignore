@@ -92,5 +92,12 @@ __pycache__/
 # Documentacion de estres y sanitizers
 !/docs/ESTRES.md
 
+# Informe final y figuras del Issue P2-16
+!/docs/informe.tex
+!/docs/informe.pdf
+!/docs/DEFENSA.md
+!/docs/figuras/
+!/docs/figuras/*.png
+
 # Configuración local de Visual Studio Code.
 /.vscode/

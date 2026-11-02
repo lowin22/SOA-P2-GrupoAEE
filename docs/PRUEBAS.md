@@ -1,18 +1,18 @@
 # P2-03 — Matriz de requisitos, pruebas y evidencia
 
-**Estado:** suite funcional implementada y parcialmente validada; se conservan pendientes de cobertura y revisión.
+**Estado:** suite funcional, intercalados, estrés, sanitizers y experimento ejecutados. La entrega limpia independiente corresponde a P2-17.
 **Base:** enunciado oficial del Proyecto 2 e interfaces acordadas en P2-01.
 **Responsables:** cada autor prueba su módulo; Esteban integra suite y verificador en P2-11/P2-12; Edwin cubre carreras de cierre (P2-13); Adrián cubre estrés y sanitizers (P2-14).
 
 ## 1. Reglas generales
 
-- `make test` ejecutará pruebas automáticas y devolverá código distinto de cero ante cualquier incumplimiento. **El target está implementado y se ha ejecutado correctamente**; la cobertura se acredita únicamente para los casos comprobados.
+- `make test` ejecuta pruebas automáticas y devuelve código distinto de cero ante cualquier incumplimiento. La cobertura se acredita únicamente para los casos comprobados.
 - Los timeouts en scripts detectan falta de progreso; jamás sustituyen los bloqueos POSIX del sistema.
-- Cada caso tendrá: identificador, comando reproducible, configuración, salida esperada, salida obtenida, código de salida y ubicación de CSV/evidencia. Al implementar, registrar en esta tabla los resultados reales.
+- Cada caso registra identificador, comando reproducible, configuración, salida esperada, salida obtenida, código de salida y ubicación de evidencia.
 - Usar nombres POSIX únicos por prueba (p. ej., `/soa_p2_test_<identificador>`), limpiar únicamente recursos creados por el caso y no interferir con otras instancias.
 - Para verificar mensajes, cruzar los CSV por `(producer_id,sequence)`, `enqueue_seq`, `dequeue_seq` y `payload_hex`; no inferir FIFO del orden de las líneas de distintos archivos.
 - Los procesos `producer` y `consumer` deberán lanzarse como **procesos distintos**, nunca sustituirse por hilos.
-- Los escenarios implementados se ejecutan mediante `make test`; los demás permanecen como requisitos pendientes de comprobación.
+- Los escenarios integrados se ejecutan mediante `make test`; los resultados observados se resumen en las secciones siguientes.
 
 ## 2. Matriz obligatoria
 
@@ -68,15 +68,12 @@ Por cada corrida conservar: nombres de instancia, parámetros, semillas individu
 | T12 | `make test-stress` | 32/32 con conservación y cierre completo | 32000 mensajes verificados por capacidad | Sección 10 | Aprobado |
 | T13 | `make test-sanitizers ASAN_OPTIONS=detect_leaks=0:halt_on_error=1` | Suite y estrés sin errores de ASan o UBSan | Ambas configuraciones aprobadas, detección de fugas desactivada en ASan | Sección 10 | Aprobado sin comprobación de fugas |
 | T07–T11 (P2-13) | `make -j4 test-shutdown` | Corte ordenado, conservación, rechazo tardío y destrucción única | Todos los intercalados terminaron con código 0 | `tests/test_shutdown.c` y tabla de la sección 8 | Aprobado |
-| 45 corridas | Pendiente | 45 corridas verificadas | No ejecutado | Pendiente | Pendiente |
+| 45 corridas | `python3 scripts/ejecutar_experimentos.py --ejecutar --todas` | 45 corridas verificadas, 800 mensajes cada una | 45 válidas y 36 000 mensajes consolidados | `results/experimentos/analisis_final/` | Aprobado con limitaciones de entorno y esperas |
 
-## 6. Revisiones pendientes
+## 6. Limitaciones pendientes para la entrega
 
-- [ ] Validar con Edwin y Adrián que los casos observan el protocolo real de conexión y cierre.
-- [ ] Aprobar el contrato de eventos y auditar el cierre sin inventar valores fuera de los enums.
-- [ ] Confirmar los nombres definitivos de scripts y archivos antes de automatizarlos.
-- [ ] Incorporar los comandos concretos y resultados reales conforme los demás Issues avancen.
-- [ ] Dirigir el Pull Request del P2-03 a `develop` y no a `main`.
+- Recuperar el entorno exacto y las métricas de espera de la sesión experimental original, o repetir las 45 corridas con esa evidencia.
+- Repetir la reconstrucción y la suite desde una copia independiente del commit final en P2-17.
 
 ## 7. Evidencias de ejecución del P2-12 — 31 de octubre de 2026
 

@@ -1,8 +1,8 @@
 # P2-03 — Contrato de CSV y métricas
 
-**Estado:** propuesta para revisión de Edwin (revisor principal) y Adrián (instrumentación).
-**Base:** enunciado oficial P2, `docs/ARQUITECTURA.md`, `docs/PROTOCOLO.md` e interfaces `include/soa/{types,message,events,buffer,participants,shutdown}.h` en `develop` (consultadas el 25-10-2026).
-**Alcance:** especificación; la implementación corresponde principalmente a P2-08, el verificador a P2-11 y la suite a P2-12.
+**Estado:** contrato de eventos y resumen implementado. El escritor de métricas históricas existe, pero el finalizador no exporta esos acumuladores en una ejecución real.
+**Base:** enunciado oficial P2, `docs/ARQUITECTURA.md`, `docs/PROTOCOLO.md` e interfaces públicas en `include/soa/`.
+**Alcance:** implementación P2-08, verificador P2-11, suite P2-12 y análisis experimental P2-15.
 
 ## 1. Principios y fuentes de verdad
 
@@ -11,7 +11,7 @@
 - En el evento `ENQUEUE`, `message.enqueue_seq` y `message.enqueue_time_ns` se asignan al aceptar la inserción. En `DEQUEUE`, `dequeue_seq` se asigna al extraer. Para JOIN/LEAVE y cambios de estado, no hay mensaje aplicable.
 - Todas las duraciones y marcas relativas al proceso emplean `CLOCK_MONOTONIC`; los tiempos de pared no se usan para orden ni latencias.
 - La identidad del mensaje es el par `(producer_id, sequence)`. La carga útil son 32 bytes binarios reproducibles a partir de ese par según `docs/ARQUITECTURA.md`; se exporta como **64 dígitos hexadecimales minúsculos**, sin espacios.
-- Los nombres CSV y su serialización no existen aún como implementación; **este documento propone su contrato** sin afirmar que las funciones de P2-08 están disponibles.
+- La serialización se implementa en `src/common/csv_writer.c`; el verificador exige exactamente este contrato.
 
 ## 2. Formato del CSV de eventos (v1)
 
@@ -56,23 +56,23 @@ Las dos filas de mensajes muestran la **forma del formato**, no un payload váli
 
 - `JOIN`: registro exitoso; ocurre bajo `OPEN` y consume un ID histórico.
 - `LEAVE`: retirada confirmada; si el consumidor retiró un mensaje, sucede después de completar su procesamiento. El resumen del finalizador usa los acumuladores compartidos ya finalizados y no espera la escritura del evento privado; el verificador de logs se ejecuta después de terminar los trabajadores.
-- `STATE_CHANGE`: transición `OPEN → CLOSING → CLOSED`. **Decisión pendiente**: no debe inventarse una fila de trabajador para un evento originado por `finisher`. Se recomienda registrar estos eventos en un archivo de auditoría separado del finalizador (`summary` y/o `lifecycle.csv`), conservando timestamp y estado, y ampliar si hace falta el contrato mediante un tipo de evento dedicado. `soa_event_t` contiene rol de trabajador: un registro `finisher` en la misma estructura requiere aprobación del equipo.
+- `STATE_CHANGE`: no se inventa una fila de trabajador para un evento originado por `finisher`. El corte y la liberación se auditan mediante `closing_start_ns` y `release_complete_ns` en el resumen; los eventos posteriores al corte se contrastan contra esas marcas.
 - Una inserción rechazada durante cierre **no genera** `ENQUEUE`, y no aumenta aceptados. Las salidas con `SOA_CLOSED` quedan auditadas con eventos de retirada y/o auditoría de cierre.
 
-**Decisión necesaria con Edwin/Adrián:** quién emite `STATE_CHANGE`, qué ruta de auditoría se conserva y qué campos privados adicionales permiten rastrear el corte sin usar un rol inexistente en `soa_role_t`.
+El finalizador no adopta un rol inexistente en `soa_role_t`; el resumen es la fuente de auditoría del cambio global de estado.
 
 ## 3. Resumen de finalización (`--summary`)
 
 Un único archivo CSV del finalizador, con encabezado y una fila por instancia cerrada normalmente. El snapshot privado de `soa_shutdown_run` debe contener lo necesario para escribirlo **después** de destruir y desvincular la memoria compartida.
 
-**Cabecera mínima propuesta:**
+**Cabecera implementada:**
 
 ```csv
 schema_version,instance_name,capacity,accepted,extracted,pending,first_worker_start_ns,last_dequeue_ns,closing_start_ns,release_complete_ns,throughput_msg_s,latency_mean_ns,latency_p95_ns,closing_duration_ns
 ```
 
 - `accepted`, `extracted`, `pending` son totales de datos, nunca mensajes de control. Durante ejecución: `accepted = extracted + pending`; tras cierre normal: `pending = 0` y `accepted = extracted`.
-- `first_worker_start_ns` se captura **en el primer registro exitoso de productor/consumidor**, bajo mutex (es la definición operativa propuesta para «primer inicio de operación»); debe validarse con el equipo antes de implementar throughput. Si un trabajador se registra pero no realiza operaciones, ese instante sigue siendo el inicio medido.
+- `first_worker_start_ns` se captura **en el primer registro exitoso de productor/consumidor**, bajo mutex. Si un trabajador se registra pero no realiza operaciones, ese instante sigue siendo el inicio medido.
 - `last_dequeue_ns` se captura bajo mutex cuando se completa la extracción del último mensaje. Se mantiene vacío si no hubo extracción.
 - `closing_start_ns` se captura cuando el finalizador cambia a `CLOSING` bajo mutex.
 - `release_complete_ns` se obtiene con reloj monotónico al terminar la liberación completa de recursos; no se incluye la escritura posterior del CSV.
@@ -84,7 +84,7 @@ schema_version,instance_name,capacity,accepted,extracted,pending,first_worker_st
 
 ### Esperas y adquisición del mutex por proceso
 
-Se propone un segundo CSV `worker_metrics.csv` o representación equivalente en el resumen del finalizador para **todos los IDs históricos registrados**, incluidos los que se retiraron antes del cierre:
+El módulo `worker_metrics.c` define un segundo CSV para estadísticas históricas:
 
 ```csv
 schema_version,role,participant_id,wait_space_ns,wait_data_ns,mutex_acquire_ns,accepted,extracted
@@ -95,12 +95,12 @@ schema_version,role,participant_id,wait_space_ns,wait_data_ns,mutex_acquire_ns,a
 - Esas duraciones incluyen la **readquisición del mutex** posterior al despertar. Se etiquetan como «espera por condición + readquisición», **no** como tiempo exclusivamente sin espacio/datos.
 - `mutex_acquire_ns`: suma de intervalos que van desde antes de intentar `pthread_mutex_lock` hasta adquirirlo **en adquisiciones explícitas**. No sumar nuevamente a este contador la readquisición implícita de `cond_wait` salvo separar instrumentación y declararlo, para evitar doble conteo.
 - `accepted`/`extracted`: contadores por participante desde las operaciones protegidas; los históricos sobreviven a LEAVE en memoria compartida hasta la instantánea privada del finalizador.
-- Se necesitan campos de acumulación en el registro histórico compartido y una estructura privada de snapshot definida de común acuerdo con P2-07/P2-10; el encabezado `shutdown.h` actual declara el snapshot como **opaco**, por lo que esto es contrato a implementar, no acceso existente.
+- La instancia acumula `mutex_wait_ns`, `condition_wait_ns` y operaciones por participante. No obstante, el snapshot opaco de cierre no copia esos arreglos y `finisher` no ofrece una ruta para `worker_metrics.csv`; por ello, el escritor está probado aisladamente pero las 45 corridas no exportaron estas métricas.
 
 ### Estrategia para el percentil y límites
 
 - Para las 45 corridas prescritas: 4 productores × 200 mensajes = **800 latencias por corrida**; puede almacenarse un vector privado en el consumidor y agregarse a la estructura de medición, o una colección global acotada para ese caso. Sin embargo, los productores sin cuota pueden generar una cantidad indefinida, y un arreglo fijo no sería correcto como solución general.
-- **Propuesta recomendada:** reconstruir el p95 exacto a partir de los CSV de eventos completos, una vez que todos los trabajadores cierren sus archivos, y calcular/resumir los tiempos de espera del snapshot. Antes de aceptarla, Edwin debe resolver cómo el finalizador encuentra de forma segura todas las rutas de logs (`--log` es libre) y si el requisito exige que el resumen de `finisher` se escriba sin depender de los logs de trabajadores. **No se debe asumir resuelto.** Alternativa: guardar latencias en almacenamiento privado o fichero auxiliar por instancia coordinado, con política clara de memoria y fallos.
+- El análisis reconstruye el p95 exacto a partir de los CSV de eventos completos, después de cerrar los trabajadores. Las columnas de latencia del resumen de `finisher` permanecen vacías; `scripts/metricas.py` y `scripts/analizar_experimentos.py` son la fuente de latencia media y P95 publicados.
 - El diseño no debe mantener muestras ilimitadas en memoria compartida ni truncar silenciosamente percentiles; una capacidad agotada se informa claramente como error de medición, sin alterar mensajes aceptados.
 
 ## 4. Integridad, errores y concurrencia
@@ -122,10 +122,8 @@ schema_version,role,participant_id,wait_space_ns,wait_data_ns,mutex_acquire_ns,a
 6. **Estado `CLOSED`:** el finalizador lo registra antes de destruir; el snapshot debe sobrevivir al `munmap`.
 7. **Acordar:** auditoría de cambio de estado, fuente exacta del p95, descubrimiento de logs y formato definitivo del resumen/metricas; documentar decisiones en el PR de P2-03.
 
-## 6. Revisión y aprobación
+## 6. Revisión y estado final
 
-- [ ] Edwin valida snapshot, métricas históricas, cierre y origen de datos.
-- [ ] Adrián valida en qué punto del buffer se capturan las marcas y la ocupación.
-- [ ] Esteban contrasta ejemplos de eventos, fórmulas y casos límite.
-- [ ] Se congela versión de columnas antes de iniciar P2-08/P2-11.
-- [ ] PR del P2-03 revisado y dirigido a `develop` (no a `main`).
+- Los eventos, el resumen y el verificador están integrados en `develop`.
+- Las fórmulas de throughput y latencia se validan mediante pruebas Python.
+- La exportación de esperas históricas desde `finisher` no está integrada y se declara como limitación experimental.
