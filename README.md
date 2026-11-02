@@ -46,6 +46,11 @@ Los binarios se generan en la raíz y los objetos/dependencias en `build/`.
 ante incumplimientos. Incluye las suites de P2-04 a P2-10 disponibles en esta rama.
 `make help` describe los objetivos disponibles.
 
+`make test-stress` verifica 32 productores y 32 consumidores con pausas cero
+Está incluido en `make test` y comprueba 32000 mensajes en capacidades 1 y 8
+`make test-asan` y `make test-ubsan` reconstruyen y ejecutan la suite instrumentada
+El [documento de estrés y sanitizers](docs/ESTRES.md) incluye comandos y limitaciones
+
 ## Opciones de los ejecutables
 
 ```bash

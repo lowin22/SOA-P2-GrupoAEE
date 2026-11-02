@@ -89,5 +89,8 @@ __pycache__/
 # Documentacion de trabajadores
 !/docs/TRABAJADORES.md
 
+# Documentacion de estres y sanitizers
+!/docs/ESTRES.md
+
 # Configuración local de Visual Studio Code.
 /.vscode/
